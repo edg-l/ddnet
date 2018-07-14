@@ -58,14 +58,22 @@ bool CEntity::GameLayerClipped(vec2 CheckPos)
 bool CEntity::GetNearestAirPos(vec2 Pos, vec2 ColPos, vec2* pOutPos)
 {
 	int iter = 0;
+	char aBuf[128];
+	str_format(aBuf, sizeof(aBuf), "ColPos: %f, %f", ColPos.x, ColPos.y);
+	GameServer()->SendChat(-1, 0, aBuf);
 	while (GameServer()->Collision()->CheckPoint(Pos)) {
-		char aBuf[64];
 		str_format(aBuf, sizeof(aBuf), "Pos (iter: %d): %f, %f", iter, Pos.x, Pos.y);
 		GameServer()->SendChat(-1, 0, aBuf);
+		vec2 normalized = normalize(ColPos - Pos);
 		Pos += normalize(ColPos - Pos);
+		str_format(aBuf, sizeof(aBuf), "Normalize (iter: %d): %f", iter, normalized.x, normalized.y);
+		GameServer()->SendChat(-1, 0, aBuf);
+		vec2 minus = ColPos - Pos;
+		str_format(aBuf, sizeof(aBuf), "Minus (iter: %d): %f", iter, minus.x, minus.y);
+		GameServer()->SendChat(-1, 0, aBuf);
 		iter++;
 	}
-	char aBuf[64];
+	
 	str_format(aBuf, sizeof(aBuf), "Pos after loop: %f, %f", Pos.x, Pos.y);
 	GameServer()->SendChat(-1, 0, aBuf);
 
