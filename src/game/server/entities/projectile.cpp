@@ -121,7 +121,7 @@ void CProjectile::Tick()
 
 	CCharacter *pTargetChr = GameServer()->m_World.IntersectCharacter(PrevPos, ColPos, m_Freeze ? 1.0f : 6.0f, ColPos, pOwnerChar, m_Owner);
 
-	if(Collide || pTargetChr)
+	if(Collide && pTargetChr)
 		GameServer()->CreateExplosion(ColPos, pOwnerChar->GetPlayer()->GetCID(), WEAPON_GRENADE, true, m_Owner == -1, -1LL);
 
 	if(m_LifeSpan > -1)
