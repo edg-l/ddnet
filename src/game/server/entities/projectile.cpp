@@ -179,7 +179,7 @@ void CProjectile::Tick()
 				if (!Collide)
 					Found = GetNearestAirPosPlayer(pTargetChr->m_Pos, &PossiblePos);
 				else
-					Found = GetNearestAirPos(NewPos, PrevPos, &PossiblePos);
+					Found = GetNearestAirPos(NewPos, CurPos, &PossiblePos);
 				Found = false;
 				if (Found && PossiblePos)
 				{
