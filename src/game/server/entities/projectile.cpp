@@ -169,12 +169,7 @@ void CProjectile::Tick()
 				int TileIndex = GameServer()->Collision()->GetTileIndex(MapIndex);
 				int TileFIndex = GameServer()->Collision()->GetFTileIndex(MapIndex);
 
-				bool IsTileValid = false;
-				
 				if ((m_Type == WEAPON_GUN || m_Type == WEAPON_GRENADE) && (TileIndex != TILE_NO_TELE_GUN && TileFIndex != TILE_NO_TELE_GUN))
-					IsTileValid = true;
-
-				if (IsTileValid)
 				{
 					bool Found;
 					vec2 PossiblePos;
