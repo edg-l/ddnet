@@ -161,7 +161,7 @@ void CProjectile::Tick()
 			pTargetChr->Freeze();
 
 		if (pOwnerChar && ColPos && !GameLayerClipped(ColPos) &&
-			(m_Type == WEAPON_GRENADE && pOwnerChar->m_HasTeleGrenade) || (m_Type == WEAPON_GUN && pOwnerChar->m_HasTeleGun))
+			((m_Type == WEAPON_GRENADE && pOwnerChar->m_HasTeleGrenade) || (m_Type == WEAPON_GUN && pOwnerChar->m_HasTeleGun)))
 		{
 			int MapIndex = GameServer()->Collision()->GetPureMapIndex(pTargetChr ? pTargetChr->m_Pos.x : ColPos.x,
 				pTargetChr ? pTargetChr->m_Pos.y : ColPos.y);
