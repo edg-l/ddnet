@@ -180,7 +180,7 @@ void CProjectile::Tick()
 					Found = GetNearestAirPosPlayer(pTargetChr->m_Pos, &PossiblePos);
 				else
 					Found = GetNearestAirPos(NewPos, &PossiblePos);
-
+				Found = false;
 				if (Found && PossiblePos)
 				{
 					GameServer()->CreateDeath(pOwnerChar->Core()->m_Pos, pOwnerChar->GetPlayer()->GetCID(),
