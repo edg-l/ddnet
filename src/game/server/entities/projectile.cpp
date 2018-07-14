@@ -162,27 +162,10 @@ void CProjectile::Tick()
 
 		if (pOwnerChar && ColPos && !GameLayerClipped(ColPos))
 		{
-			bool IsTeleValid = false;
-			switch (m_Type)
+			if ((m_Type == WEAPON_GRENADE && pOwnerChar->m_HasTeleGrenade) || (m_Type == WEAPON_GUN && pOwnerChar->m_HasTeleGun))
 			{
-            case WEAPON_GRENADE:
-				{
-					if (pOwnerChar->m_HasTeleGrenade)
-						IsTeleValid = true;
-				}
-				break;
-			case WEAPON_GUN:
-				{
-					if (pOwnerChar->m_HasTeleGun)
-						IsTeleValid = true;
-				}
-				break;
-			}
-
-			if (IsTeleValid)
-			{
-				int MapIndex = GameServer()->Collision()->GetPureMapIndex(round_to_int(pTargetChr ? pTargetChr->m_Pos.x : ColPos.x),
-				round_to_int(pTargetChr ? pTargetChr->m_Pos.y : ColPos.y));
+				int MapIndex = GameServer()->Collision()->GetPureMapIndex(pTargetChr ? pTargetChr->m_Pos.x : ColPos.x,
+				pTargetChr ? pTargetChr->m_Pos.y : ColPos.y);
 				int TileIndex = GameServer()->Collision()->GetTileIndex(MapIndex);
 				int TileFIndex = GameServer()->Collision()->GetFTileIndex(MapIndex);
 
