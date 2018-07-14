@@ -155,7 +155,7 @@ void CProjectile::Tick()
 	{
 		if(m_Explosive/*??*/ && (!pTargetChr || (pTargetChr && (!m_Freeze || (m_Weapon == WEAPON_SHOTGUN && Collide)))))
 		{
-			GameServer()->CreateExplosion(ColPos, m_Owner, m_Weapon, m_Owner == -1, (!pTargetChr ? -1 : pTargetChr->Team()),
+			//GameServer()->CreateExplosion(ColPos, m_Owner, m_Weapon, m_Owner == -1, (!pTargetChr ? -1 : pTargetChr->Team()),
 			(m_Owner != -1)? TeamMask : -1LL);
 			GameServer()->CreateSound(ColPos, m_SoundImpact,
 			(m_Owner != -1)? TeamMask : -1LL);
