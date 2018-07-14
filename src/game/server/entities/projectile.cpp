@@ -173,6 +173,10 @@ void CProjectile::Tick()
 				bool Found;
 				vec2 PossiblePos;
 
+				vec2 PosInBlock = vec2(round_to_int(ColPos.x) % 32, round_to_int(ColPos.y) % 32);
+				vec2 BlockCenter = vec2(round_to_int(ColPos.x), round_to_int(ColPos.y)) - PosInBlock + vec2(16.0f, 16.0f);
+				GameServer()->CreateExplosion(BlockCenter, pOwnerChar->GetPlayer()->GetCID(), WEAPON_GRENADE, true, (m_Owner != -1) ? TeamMask : -1LL);
+
 				if (pTargetChr)
 					Found = GetNearestAirPosPlayer(pTargetChr->m_Pos, &PossiblePos);
 				else
