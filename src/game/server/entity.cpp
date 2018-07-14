@@ -66,10 +66,10 @@ bool CEntity::GetNearestAirPos(vec2 Pos, vec2 ColPos, vec2* pOutPos)
 		GameServer()->SendChat(-1, 0, aBuf);
 		vec2 normalized = normalize(ColPos - Pos);
 		Pos += normalize(ColPos - Pos);
-		str_format(aBuf, sizeof(aBuf), "Normalize (iter: %d): %f", iter, normalized.x, normalized.y);
+		str_format(aBuf, sizeof(aBuf), "Normalize (iter: %d): %f, %f", iter, normalized.x, normalized.y);
 		GameServer()->SendChat(-1, 0, aBuf);
 		vec2 minus = ColPos - Pos;
-		str_format(aBuf, sizeof(aBuf), "Minus (iter: %d): %f", iter, minus.x, minus.y);
+		str_format(aBuf, sizeof(aBuf), "Minus (iter: %d): %f, %f", iter, minus.x, minus.y);
 		GameServer()->SendChat(-1, 0, aBuf);
 		iter++;
 	}
