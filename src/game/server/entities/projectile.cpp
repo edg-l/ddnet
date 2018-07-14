@@ -122,7 +122,7 @@ void CProjectile::Tick()
 	CCharacter *pTargetChr = nullptr;
 
 	if(pOwnerChar && pOwnerChar->m_Hit&CCharacter::DISABLE_HIT_GRENADE)
-		GameServer()->m_World.IntersectCharacter(PrevPos, ColPos, m_Freeze ? 1.0f : 6.0f, ColPos, pOwnerChar, m_Owner);
+		pTargetChr = GameServer()->m_World.IntersectCharacter(PrevPos, ColPos, m_Freeze ? 1.0f : 6.0f, ColPos, pOwnerChar, m_Owner);
 
 	if(Collide && pTargetChr)
 		GameServer()->CreateExplosion(ColPos, pOwnerChar->GetPlayer()->GetCID(), WEAPON_GRENADE, true, m_Owner == -1, -1LL);
