@@ -124,9 +124,6 @@ void CProjectile::Tick()
 	if(pOwnerChar && (pOwnerChar ? !(pOwnerChar->m_Hit&CCharacter::DISABLE_HIT_GRENADE) : g_Config.m_SvHit))
 		pTargetChr = GameServer()->m_World.IntersectCharacter(PrevPos, ColPos, m_Freeze ? 1.0f : 6.0f, ColPos, pOwnerChar, m_Owner);
 
-	if(Collide && pTargetChr)
-		GameServer()->CreateExplosion(ColPos, pOwnerChar->GetPlayer()->GetCID(), WEAPON_GRENADE, true, m_Owner == -1, -1LL);
-
 	if(m_LifeSpan > -1)
 		m_LifeSpan--;
 
@@ -158,8 +155,8 @@ void CProjectile::Tick()
 	{
 		if(m_Explosive/*??*/ && (!pTargetChr || (pTargetChr && (!m_Freeze || (m_Weapon == WEAPON_SHOTGUN && Collide)))))
 		{
-			//GameServer()->CreateExplosion(ColPos, m_Owner, m_Weapon, m_Owner == -1, (!pTargetChr ? -1 : pTargetChr->Team()),
-			//(m_Owner != -1)? TeamMask : -1LL);
+			GameServer()->CreateExplosion(ColPos, m_Owner, m_Weapon, m_Owner == -1, (!pTargetChr ? -1 : pTargetChr->Team()),
+			(m_Owner != -1)? TeamMask : -1LL);
 			GameServer()->CreateSound(ColPos, m_SoundImpact,
 			(m_Owner != -1)? TeamMask : -1LL);
 		}
