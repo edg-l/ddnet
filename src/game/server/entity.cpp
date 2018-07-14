@@ -55,8 +55,12 @@ bool CEntity::GameLayerClipped(vec2 CheckPos)
 			round_to_int(CheckPos.y)/32 < -200 || round_to_int(CheckPos.y)/32 > GameServer()->Collision()->GetHeight()+200 ? true : false;
 }
 
-bool CEntity::GetNearestAirPos(vec2 Pos, vec2* pOutPos)
+bool CEntity::GetNearestAirPos(vec2 Pos, vec2 ColPos, vec2* pOutPos)
 {
+	while (GameServer()->Collision()->CheckPoint(Pos)) {
+		Pos += normalize(ColPos - Pos);
+	}
+
 	vec2 PosInBlock = vec2(round_to_int(Pos.x) % 32, round_to_int(Pos.y) % 32);
 	vec2 BlockCenter = vec2(round_to_int(Pos.x), round_to_int(Pos.y)) - PosInBlock + vec2(16.0f, 16.0f);
 	GameServer()->CreateExplosion(BlockCenter, 0, WEAPON_GRENADE, true, -1, -1LL);
