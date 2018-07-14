@@ -59,7 +59,7 @@ bool CEntity::GetNearestAirPos(vec2 Pos, vec2* pOutPos)
 {
 	vec2 PosInBlock = vec2(round_to_int(Pos.x) % 32, round_to_int(Pos.y) % 32);
 	vec2 BlockCenter = vec2(round_to_int(Pos.x), round_to_int(Pos.y)) - PosInBlock + vec2(16.0f, 16.0f);
-	GameServer()->CreateExplosion(BlockCenter, 0, WEAPON_GRENADE, 0, -1, -1LL);
+	GameServer()->CreateExplosion(BlockCenter, 0, WEAPON_GRENADE, true, -1, -1LL);
 
 	float Size = 31.0f; // A bit less than the tile size
 
