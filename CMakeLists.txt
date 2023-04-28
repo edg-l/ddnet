@@ -110,8 +110,9 @@ elseif(TARGET_OS STREQUAL "mac")
 endif()
 
 option(WEBSOCKETS "Enable websockets support" OFF)
-option(MYSQL "Enable mysql support" OFF)
+option(MYSQL "Enable mysql database support" OFF)
 option(TEST_MYSQL "Test mysql support in unit tests (also sets -DMYSQL=ON)" OFF)
+option(POSTGRESQL "Enable postgresql database support" OFF)
 option(AUTOUPDATE "Enable the autoupdater" OFF)
 option(INFORM_UPDATE "Inform about available updates" ON)
 option(VIDEORECORDER "Enable video recording support via FFmpeg" ON)
@@ -546,6 +547,12 @@ if(MYSQL)
 else()
   set(MYSQL_LIBRARIES)
 endif()
+if(POSTGRESQL)
+  # CMake ships already with a cmake script.
+  find_package(PostgreSQL)
+else()
+  set(POSTGRESQL_LIBRARIES)
+endif()
 find_package(Ogg)
 find_package(Opus)
 find_package(Opusfile)
@@ -634,6 +641,9 @@ endif()
 if(MYSQL)
   show_dependency_status("MySQL" MYSQL)
 endif()
+if(POSTGRESQL)
+  show_dependency_status("PostgreSQL" PostgreSQL)
+endif()
 show_dependency_status("Ogg" OGG)
 show_dependency_status("OpenSSL Crypto" CRYPTO)
 show_dependency_status("Opus" OPUS)
@@ -670,6 +680,10 @@ endif()
 
 if(MYSQL AND NOT(MYSQL_FOUND))
   message(SEND_ERROR "You must install MySQL to compile the ${CMAKE_PROJECT_NAME} server with MySQL support")
+endif()
+
+if(POSTGRESQL AND NOT(POSTGRESQL_FOUND))
+  message(SEND_ERROR "You must install PostgreSQL to compile the ${CMAKE_PROJECT_NAME} server with PostgreSQL support")
 endif()
 
 if(WEBSOCKETS AND NOT(WEBSOCKETS_FOUND))
@@ -2464,6 +2478,7 @@ if(SERVER)
     databases/connection_pool.cpp
     databases/connection_pool.h
     databases/mysql.cpp
+    databases/postgresql.cpp
     databases/sqlite.cpp
     main.cpp
     name_ban.cpp
@@ -2553,6 +2568,7 @@ if(SERVER)
   set(LIBS_SERVER
     ${MINIUPNPC_LIBRARIES}
     ${MYSQL_LIBRARIES}
+    ${POSTGRESQL_LIBRARIES}
     ${TARGET_ANTIBOT}
     rust_engine_shared
 
@@ -2753,6 +2769,7 @@ if(GTEST_FOUND OR DOWNLOAD_GTEST)
     src/engine/server/databases/connection.h
     src/engine/server/databases/sqlite.cpp
     src/engine/server/databases/mysql.cpp
+    src/engine/server/databases/postgresql.cpp
     src/engine/server/name_ban.cpp
     src/engine/server/name_ban.h
     src/engine/server/sql_string_helpers.cpp
@@ -2772,7 +2789,7 @@ if(GTEST_FOUND OR DOWNLOAD_GTEST)
     $<TARGET_OBJECTS:game-shared>
     ${DEPS}
   )
-  target_link_libraries(${TARGET_TESTRUNNER} ${MYSQL_LIBRARIES} ${PNG_LIBRARIES} ${GTEST_LIBRARIES} ${LIBS})
+  target_link_libraries(${TARGET_TESTRUNNER} ${MYSQL_LIBRARIES} ${POSTGRESQL_LIBRARIES} ${PNG_LIBRARIES} ${GTEST_LIBRARIES} ${LIBS})
   target_include_directories(${TARGET_TESTRUNNER} SYSTEM PRIVATE ${GTEST_INCLUDE_DIRS})
 
   list(APPEND TARGETS_OWN ${TARGET_TESTRUNNER})
@@ -3332,6 +3349,10 @@ foreach(target ${TARGETS_OWN})
   endif()
   if(TEST_MYSQL)
     target_compile_definitions(${target} PRIVATE CONF_TEST_MYSQL)
+  endif()
+  if(POSTGRESQL)
+    target_compile_definitions(${target} PRIVATE CONF_POSTGRESQL)
+    target_include_directories(${target} SYSTEM PRIVATE ${POSTGRESQL_INCLUDE_DIRS})
   endif()
   if(AUTOUPDATE AND NOT STEAM)
     target_compile_definitions(${target} PRIVATE CONF_AUTOUPDATE)
