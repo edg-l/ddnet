@@ -1,11 +1,15 @@
 /* (c) Magnus Auvinen. See licence.txt in the root of the distribution for more information. */
 /* If you are missing that file, acquire a complete release at teeworlds.com.                */
 
+#include <base/log.h>
+
 #include <engine/editor.h>
+#include <engine/engine.h>
 #include <engine/graphics.h>
 #include <engine/keys.h>
 #include <engine/shared/config.h>
 #include <engine/shared/csv.h>
+#include <engine/storage.h>
 #include <engine/textrender.h>
 
 #include <game/generated/protocol.h>
@@ -236,6 +240,9 @@ void CChat::OnInit()
 	Console()->Chain("cl_chat_old", ConchainChatOld, this);
 	Console()->Chain("cl_chat_size", ConchainChatFontSize, this);
 	Console()->Chain("cl_chat_width", ConchainChatWidth, this);
+
+	m_pBlackListDownloadJob = std::make_shared<CBlacklistDownloadJob>(this, g_Config.m_ClWordBlacklistDownloadUrl, "censored_words_online.txt");
+	Engine()->AddJob(m_pBlackListDownloadJob);
 }
 
 bool CChat::OnInput(const IInput::CEvent &Event)
@@ -1384,4 +1391,89 @@ void CChat::SendChatQueued(const char *pLine)
 		pEntry->m_Team = m_Mode == MODE_ALL ? 0 : 1;
 		str_copy(pEntry->m_aText, pLine, Length + 1);
 	}
+}
+
+void CChat::LoadCensorList(const char *pFilePath)
+{
+}
+
+CChat::CBlacklistDownloadJob::CBlacklistDownloadJob(CChat *pChat, const char *pURL, const char *pSaveFilePath) :
+	m_pChat(pChat)
+{
+	str_copy(m_aUrl, pURL);
+	str_copy(m_aSaveFilePath, pSaveFilePath);
+	Abortable(true);
+}
+
+bool CChat::CBlacklistDownloadJob::Abort()
+{
+	if(!IJob::Abort())
+	{
+		return false;
+	}
+
+	const CLockScope LockScope(m_Lock);
+	if(m_pGetRequest)
+	{
+		m_pGetRequest->Abort();
+		m_pGetRequest = nullptr;
+	}
+	return true;
+}
+
+void CChat::CBlacklistDownloadJob::Run()
+{
+	const CTimeout Timeout{10000, 0, 8192, 10};
+	const size_t MaxResponseSize = 50 * 1024 * 1024; // 50 MiB
+
+	// We assume the file does not exist if we could not get the times
+	time_t FileCreatedTime, FileModifiedTime;
+	const bool GotFileTimes = m_pChat->Storage()->RetrieveTimes(m_aSaveFilePath, IStorage::TYPE_SAVE, &FileCreatedTime, &FileModifiedTime);
+
+	std::shared_ptr<CHttpRequest> pGet = HttpGet(m_aUrl);
+	pGet->Timeout(Timeout);
+	pGet->MaxResponseSize(MaxResponseSize);
+	pGet->WriteToFile(m_pChat->Storage(), m_aSaveFilePath, IStorage::TYPE_SAVE);
+	if(GotFileTimes)
+	{
+		pGet->IfModifiedSince(FileModifiedTime);
+		pGet->FailOnErrorStatus(false);
+	}
+	pGet->LogProgress(HTTPLOG::ALL);
+	{
+		const CLockScope LockScope(m_Lock);
+		m_pGetRequest = pGet;
+	}
+	log_info("chat-censor", "Starting word censor blacklist download with url %s to path %s", m_aUrl, m_aSaveFilePath);
+	m_pChat->Http()->Run(pGet);
+
+	// Load existing file while waiting for the HTTP request
+	if(GotFileTimes)
+	{
+	}
+
+	pGet->Wait();
+	{
+		const CLockScope LockScope(m_Lock);
+		m_pGetRequest = nullptr;
+	}
+	if(pGet->State() != EHttpState::DONE || State() == IJob::STATE_ABORTED || pGet->StatusCode() >= 400)
+	{
+		log_info("chat-censor", "Bad Status");
+		return;
+	}
+
+	if(pGet->StatusCode() == 304) // 304 Not Modified
+	{
+		log_info("chat-censor", "Not modified");
+		return;
+	}
+
+	if(State() == IJob::STATE_ABORTED)
+	{
+		log_info("chat-censor", "Aborted");
+		return;
+	}
+
+	log_info("chat-censor", "Downloaded word censor blacklist succesfully.");
 }

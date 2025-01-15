@@ -2,10 +2,16 @@
 /* If you are missing that file, acquire a complete release at teeworlds.com.                */
 #ifndef GAME_CLIENT_COMPONENTS_CHAT_H
 #define GAME_CLIENT_COMPONENTS_CHAT_H
+#include <memory>
+#include <string>
 #include <vector>
+
+#include <base/lock.h>
 
 #include <engine/console.h>
 #include <engine/shared/config.h>
+#include <engine/shared/http.h>
+#include <engine/shared/jobs.h>
 #include <engine/shared/protocol.h>
 #include <engine/shared/ringbuffer.h>
 
@@ -144,6 +150,29 @@ class CChat : public CComponent
 
 	bool LineShouldHighlight(const char *pLine, const char *pName);
 	void StoreSave(const char *pText);
+
+	std::vector<std::string> m_vCensoredWords;
+	void LoadCensorList(const char *pFilePath);
+
+	class CBlacklistDownloadJob : public IJob
+	{
+	public:
+		CBlacklistDownloadJob(CChat *pChat, const char *pURL, const char *pSaveFilePath);
+
+		bool Abort() override REQUIRES(!m_Lock);
+
+	protected:
+		void Run() override REQUIRES(!m_Lock);
+
+	private:
+		CChat *m_pChat;
+		char m_aUrl[IO_MAX_PATH_LENGTH];
+		char m_aSaveFilePath[IO_MAX_PATH_LENGTH];
+		CLock m_Lock;
+		std::shared_ptr<CHttpRequest> m_pGetRequest;
+	};
+
+	std::shared_ptr<CBlacklistDownloadJob> m_pBlackListDownloadJob = nullptr;
 
 public:
 	CChat();
