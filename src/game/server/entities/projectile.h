@@ -33,23 +33,24 @@ public:
 
 private:
 	vec2 m_Direction;
+	vec2 m_InitDir;
+
 	int m_LifeSpan;
 	int m_Owner;
 	int m_Type;
 	//int m_Damage;
 	int m_SoundImpact;
 	int m_StartTick;
-	bool m_Explosive;
-
-	// DDRace
 
 	int m_Bouncing;
-	bool m_Freeze;
+
 	int m_TuneZone;
-	bool m_BelongsToPracticeTeam;
 	int m_DDRaceTeam;
+
+	bool m_Explosive;
 	bool m_IsSolo;
-	vec2 m_InitDir;
+	bool m_BelongsToPracticeTeam;
+	bool m_Freeze;
 
 public:
 	void SetBouncing(int Value);
