@@ -92,12 +92,16 @@ bool NetworkClipped(const CGameContext *pGameServer, int SnappingClient, vec2 Ch
 	if(SnappingClient == SERVER_DEMO_CLIENT || pGameServer->m_apPlayers[SnappingClient]->m_ShowAll)
 		return false;
 
+	// Border of 10 blocks outside of view range
+	float Border = 32.f * 10.f;
+
 	float dx = pGameServer->m_apPlayers[SnappingClient]->m_ViewPos.x - CheckPos.x;
-	if(absolute(dx) > pGameServer->m_apPlayers[SnappingClient]->m_ShowDistance.x)
+	if(absolute(dx) > pGameServer->m_apPlayers[SnappingClient]->m_ShowDistance.x / 2.f + Border)
 		return true;
 
 	float dy = pGameServer->m_apPlayers[SnappingClient]->m_ViewPos.y - CheckPos.y;
-	return absolute(dy) > pGameServer->m_apPlayers[SnappingClient]->m_ShowDistance.y;
+	// Divide by 2 to get the radius.
+	return absolute(dy) > pGameServer->m_apPlayers[SnappingClient]->m_ShowDistance.y / 2.f + Border;
 }
 
 bool NetworkClippedLine(const CGameContext *pGameServer, int SnappingClient, vec2 StartPos, vec2 EndPos)
