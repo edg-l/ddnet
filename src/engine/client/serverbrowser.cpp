@@ -752,6 +752,11 @@ void CServerBrowser::SetInfo(CServerEntry *pEntry, const CServerInfo &Info) cons
 
 			if(m_ScoreKind == CServerInfo::CLIENT_SCORE_KIND_TIME || m_ScoreKind == CServerInfo::CLIENT_SCORE_KIND_TIME_BACKCOMPAT)
 			{
+				if(p0.m_Team != p1.m_Team)
+				{
+					return p0.m_Team < p1.m_Team;
+				}
+
 				// Sort unfinished (-9999) and still connecting players (-1) after others
 				if(Score0 < 0 && Score1 >= 0)
 					return false;

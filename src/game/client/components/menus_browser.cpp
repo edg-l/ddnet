@@ -1255,7 +1255,7 @@ void CMenus::RenderServerbrowserInfoScoreboard(CUIRect View, const CServerInfo *
 		if(!Item.m_Visible)
 			continue;
 
-		CUIRect Skin, Name, Clan, Score, Flag;
+		CUIRect Skin, Name, Clan, Score, Flag, Team;
 		Name = Item.m_Rect;
 
 		const ColorRGBA Color = PlayerBackgroundColor(CurrentClient.m_FriendState == IFriends::FRIEND_PLAYER, CurrentClient.m_FriendState == IFriends::FRIEND_CLAN, CurrentClient.m_Afk, false);
@@ -1264,6 +1264,7 @@ void CMenus::RenderServerbrowserInfoScoreboard(CUIRect View, const CServerInfo *
 		Name.VSplitLeft(34.0f, &Score, &Name);
 		Name.VSplitLeft(18.0f, &Skin, &Name);
 		Name.VSplitRight(26.0f, &Name, &Flag);
+		Name.VSplitRight(18.0f, &Name, &Team);
 		Flag.HMargin(6.0f, &Flag);
 		Name.HSplitTop(12.0f, &Name, &Clan);
 
@@ -1351,6 +1352,22 @@ void CMenus::RenderServerbrowserInfoScoreboard(CUIRect View, const CServerInfo *
 			});
 		if(!Printed)
 			TextRender()->TextEx(&Cursor, pClan, -1);
+
+		// Team
+		if(CurrentClient.m_Team != 0)
+		{
+			ColorRGBA TeamColor = TextRender()->DefaultTextColor();
+
+			if(CurrentClient.m_Team != 0)
+			{
+				TeamColor = m_pClient->GetDDTeamColor(CurrentClient.m_Team, 0.75f);
+			}
+			char aTeam[16];
+			str_format(aTeam, sizeof(aTeam), "%d", CurrentClient.m_Team);
+			TextRender()->TextColor(TeamColor);
+			Ui()->DoLabel(&Team, aTeam, FontSize, TEXTALIGN_ML);
+			TextRender()->TextColor(TextRender()->DefaultTextColor());
+		}
 
 		// flag
 		m_pClient->m_CountryFlags.Render(CurrentClient.m_Country, ColorRGBA(1.0f, 1.0f, 1.0f, 0.5f), Flag.x, Flag.y, Flag.w, Flag.h);

@@ -70,6 +70,7 @@ public:
 		int m_Score;
 		bool m_Player;
 		bool m_Afk;
+		int m_Team;
 
 		// skin info
 		char m_aSkin[MAX_SKIN_LENGTH];

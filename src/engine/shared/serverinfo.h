@@ -21,6 +21,7 @@ public:
 		int m_Score;
 		bool m_IsPlayer;
 		bool m_IsAfk;
+		int m_Team;
 		char m_aSkin[MAX_SKIN_LENGTH];
 		bool m_CustomSkinColors;
 		int m_CustomSkinColorBody;
