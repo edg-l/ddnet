@@ -623,7 +623,7 @@ int CNetServer::Recv(CNetChunk *pChunk, SECURITY_TOKEN *pResponseToken)
 		SECURITY_TOKEN Token;
 		int Slot = (*Flags & NET_PACKETFLAG_CONNLESS) == 0 ? GetClientSlot(Addr) : -1;
 		bool Sixup = Slot != -1 && m_aSlots[Slot].m_Connection.m_Sixup;
-		if(CNetBase::UnpackPacket(pData, Bytes, &m_RecvBuffer, Sixup, &Token, pResponseToken) == 0)
+		if(CNetBase::UnpackPacket(pData, Bytes, &m_RecvBuffer, Sixup, &Token, pResponseToken, Slot != -1) == 0)
 		{
 			if(m_RecvBuffer.m_Flags & NET_PACKETFLAG_CONNLESS)
 			{
