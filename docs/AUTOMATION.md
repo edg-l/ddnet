@@ -119,6 +119,62 @@ The 14 core fields, shared by `predicted`/`snapshot`/`prediction_for_snapshot_ti
 
 Note: the test pins `cl_antiping 1` and `cl_antiping_weapons 1`. With antiping off (the client default), the client does not predict `CDoor` collision at all (`m_WorldConfig.m_PredictWeapons` gates it in `CGameWorld::NetObjAdd`), so it walks straight through doors the server treats as solid. That is a genuine client bug, not a test artifact; it is tracked separately and deliberately not fixed here. Pinning antiping is what makes this test measure physics divergence instead of that one known gating defect.
 
+## Writing tests
+
+### Assert on `snapshot`, not `predicted`
+
+Gameplay assertions belong on `snapshot`, the server's authoritative state. On a client that mispredicts, asserting on `predicted` passes while the real game did something else, which is the failure this API exists to catch. Use `predicted` only for parity comparisons.
+
+### Do not sleep
+
+`wait_ticks` and `wait_for` block in-engine and reply once the condition holds, so tests read as a straight sequence and never poll. A test that sleeps is both slower and flakier.
+
+### Convenience helpers
+
+`AutomationClient` provides these on top of the raw commands:
+
+| Helper | Replaces |
+| --- | --- |
+| `connect(port)` | console connect, wait online, wait for local character, settle, drain parity history |
+| `snapshot()` / `predicted()` | `get_state()["snapshot"]` / `["predicted"]` |
+| `hold(ticks, **inputs)` | `set_input(...)`, `wait_ticks(...)`, read the result |
+| `sample(ticks, every=N)` | a loop collecting snapshots across a window |
+| `parity_mismatches()` | drain the history, keep only disagreeing ticks |
+
+### Choosing a map
+
+Movement room varies enormously and the wrong map yields a test that cannot fail. Measured over 30-tick windows from spawn:
+
+| Map | Walk right | Jump rise | Hook |
+| --- | --- | --- | --- |
+| `coverage` | 65 units | 3 units | never latches |
+| `Tutorial` | 240 units | 173 units | latches downward |
+| `LearnToPlay` | 240 units | 115 units | latches downward |
+
+`coverage.map` is a synthetic tile-coverage course whose spawn is boxed in; it is the right map for exercising DDRace entity classes and the wrong one for anything about movement.
+
+### Coordinates and hooking
+
+`y` grows downward, so a jump lowers it and the apex is `min(y)` over the airborne window. Positions and velocities are quantized `CNetObj_CharacterCore` values, with velocity in 1/256 units per tick. `m_Jumped` stays set for the whole airborne window.
+
+Aiming the hook at open air only reaches `HOOK_FLYING`; hooking straight down into the floor the tee stands on latches reliably. The hook also latches within a few ticks, so coarse sampling can miss `HOOK_FLYING` entirely — assert on the terminal `HOOK_GRABBED`. Hook states are defined in `src/game/gamecore.h`.
+
+### Thresholds
+
+Derive them from a measurement and record it in a comment. A threshold tuned until the test passes is worse than no test.
+
+### Verify the test can fail
+
+Confirm the failure path deliberately. `automation_prediction_parity` was checked by dropping `cl_antiping`, which makes it report mismatching ticks with the door-prediction signature described above.
+
+### Gotchas
+
+- `wait_for_startup([client, server])` races the handshake: the client logs `automation: listening` *before* `client: version`, and the log queue has a single consumer, so waiting for both consumes the automation line and then blocks. Wait on the server only; `client.automation(port)` has its own later readiness signal.
+- Use a distinct port per run, ideally `free_tcp_port()`.
+- Only one automation client may be connected at a time; a second receives `bad_request`.
+- `console screenshot` returns `ok` and writes nothing in a `-DHEADLESS_CLIENT=ON` build, because the null backend has no framebuffer. There is also no command to retrieve an image over the socket.
+- Kill every process a test starts. Strays hold ports and silently corrupt later runs.
+
 ## Security
 
 The listen socket is hard-coded to `127.0.0.1` and the feature is compiled out unless `-DAUTOMATION=ON` is passed, with the port defaulting to `0` (disabled) even then. There is no authentication: any local process that can reach the port gets full console access, the same trust model as `cl_input_fifo`. Do not enable this option in a build that is exposed to untrusted local users.
