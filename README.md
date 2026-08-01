@@ -213,6 +213,10 @@ Detailed instructions can be found in [`docs/DATABASE.md`](docs/DATABASE.md).
 
 Detailed instructions can be found in [`docs/DEBUGGING.md`](docs/DEBUGGING.md).
 
+## Client automation API
+
+A `-DAUTOMATION=ON` build exposes a TCP control API for driving the client from tests and tooling. Detailed instructions can be found in [`docs/automation.md`](docs/automation.md).
+
 ## Better Git Blame
 
 First, use a better tool than `git blame` itself, e.g. [`tig`](https://jonas.github.io/tig/). There's probably a good UI for Windows, too. Alternatively, use the GitHub UI, click "Blame" in any file view.

@@ -17,6 +17,8 @@ import sys
 import tempfile
 import traceback
 
+from automation import AutomationClient, core_mismatches, free_tcp_port
+
 
 def urlopen_anystatus(url):
 	# Adapted from https://stackoverflow.com/a/74844056:
@@ -112,7 +114,7 @@ YELLOW = "\x1b[33m"
 
 
 class TestRunner:
-	def __init__(self, ddnet, ddnet_server, ddnet_mastersrv, repo_dir, test_dir, show_full_output, test_websockets, valgrind_memcheck, keep_tmpdirs, timeout_multiplier):
+	def __init__(self, ddnet, ddnet_server, ddnet_mastersrv, repo_dir, test_dir, show_full_output, test_websockets, test_automation, valgrind_memcheck, keep_tmpdirs, timeout_multiplier):
 		self.ddnet = ddnet
 		self.ddnet_server = ddnet_server
 		self.ddnet_mastersrv = ddnet_mastersrv
@@ -122,6 +124,7 @@ class TestRunner:
 		self.extra_env_vars = {}
 		self.show_full_output = show_full_output
 		self.test_websockets = test_websockets
+		self.test_automation = test_automation
 		self.keep_tmpdirs = keep_tmpdirs
 		self.timeout_multiplier = timeout_multiplier
 		self.valgrind_memcheck = valgrind_memcheck
@@ -173,6 +176,12 @@ class TestRunner:
 				num_skipped += 1
 				continue
 			if test.requires_websockets and not self.test_websockets:
+				print(f"{test.name} ... {YELLOW}skipped{RESET}")
+				num_skipped += 1
+				continue
+			if test.requires_automation and (not self.test_automation or self.valgrind_memcheck):
+				# A real-time server against a client slowed 25x by valgrind causes prediction
+				# resets unrelated to what the test measures, so it is skipped there too.
 				print(f"{test.name} ... {YELLOW}skipped{RESET}")
 				num_skipped += 1
 				continue
@@ -452,12 +461,22 @@ def open_fifo(name):
 
 
 class Client(Runnable):
-	def __init__(self, test_env, extra_args=[]):  # noqa: B006 mutable-default-arguments
+	def __init__(self, test_env, extra_args=[], automation_port=None):  # noqa: B006 mutable-default-arguments
 		name = f"client{test_env.num_clients}"
 		self.fifo_name, self.fifo_path = fifo_name_path(test_env, name)
 		# Delay opening the FIFO until the client has started, because it will
 		# block.
 		self.fifo = None
+		automation_args = []
+		if automation_port is not None:
+			automation_args = [
+				f"cl_automation_port {automation_port}",
+				"cl_automation_fixed_step 20000",
+				"cl_refresh_rate 50",
+				"cl_refresh_rate_inactive 50",  # see R6b: without this a headless client runs at 120 fps
+				"cl_antiping 1",  # see R6c: without these the client does not predict doors
+				"cl_antiping_weapons 1",
+			]
 		super().__init__(
 			test_env,
 			name,
@@ -467,6 +486,7 @@ class Client(Runnable):
 				"gfx_fullscreen 0",
 				"cl_save_settings 0",
 			]
+			+ automation_args
 			+ extra_args,
 		)
 		test_env.num_clients += 1
@@ -475,6 +495,10 @@ class Client(Runnable):
 		if self.fifo is None:
 			self.fifo = open_fifo(self.fifo_path)
 		self.fifo.write(f"{command}\n")
+
+	def automation(self, port, timeout=60):
+		self.wait_for_log_prefix(f"automation: listening on 127.0.0.1:{port}", timeout=timeout)
+		return AutomationClient(port, timeout=timeout)
 
 	def exit(self):
 		self.command("quit")
@@ -587,11 +611,12 @@ json = {communities_json_filename!r}
 ALL_TESTS = []
 
 
-def test(test=None, *, requires_mastersrv=False, requires_websockets=False, timeout=60):
+def test(test=None, *, requires_mastersrv=False, requires_websockets=False, requires_automation=False, timeout=60):
 	def apply(test):
 		test.name = test.__name__
 		test.requires_mastersrv = requires_mastersrv
 		test.requires_websockets = requires_websockets
+		test.requires_automation = requires_automation
 		test.timeout = timeout
 		ALL_TESTS.append(test)
 		return test
@@ -840,6 +865,71 @@ def smoke_test(test_env):
 		raise AssertionError(f"unexpected ranks.\n\nactual:\n{ranks_string}\n\nexpected:\n{expected_ranks_string}")
 
 
+@test(requires_automation=True, timeout=180)
+def automation_prediction_parity(test_env):
+	port = free_tcp_port()
+	client = test_env.client(
+		[
+			"cl_skip_start_menu 1",
+			"cl_save_settings 0",
+			"cl_auto_demo_record 0",
+			'cl_menu_map ""',
+			"snd_enable 0",
+			"cl_dummy_copy_moves 0",
+			"cl_dummy_control 0",
+		],
+		automation_port=port,
+	)
+	server = test_env.server(["sv_map coverage", "sv_high_bandwidth 1"])
+	# client.automation() waits for "automation: listening", which the client logs during
+	# OnInit() before "client: version" (client.cpp:3239 vs :3242), so it is a strictly later
+	# readiness signal than Client.wait_for_startup(); waiting for both would race the same
+	# single-consumer log queue and drop whichever line arrives first.
+	wait_for_startup([server])
+	auto = client.automation(port)
+
+	auto.console(f"connect 127.0.0.1:{server.port}")
+	auto.wait_for("state", value="online", timeout_frames=12000)
+	auto.wait_for("has_local_character", timeout_frames=6000)
+
+	# Let the prediction converge before asserting on it.
+	auto.wait_ticks(25)
+	auto.get_parity_history()
+
+	status = auto.get_status()
+	if status["menus_active"]:
+		raise AssertionError("menu is open, scripted gameplay input would be discarded")
+
+	start_x = auto.get_state()["snapshot"]["x"]
+	auto.set_input(dir=1, jump=1, target_x=200, target_y=0)
+	auto.wait_ticks(60)
+	history = auto.get_parity_history()
+	auto.clear_input()
+
+	entries = history["entries"]
+	if len(entries) < 40:
+		raise AssertionError(f"only {len(entries)} ticks were comparable, expected at least 40")
+	mismatches = [(entry["tick"], core_mismatches(entry)) for entry in entries]
+	mismatches = [(tick, diff) for tick, diff in mismatches if diff]
+	if mismatches:
+		details = "\n".join(f"  tick {tick}: {diff}" for tick, diff in mismatches[:10])
+		raise AssertionError(f"client prediction disagrees with the server on {len(mismatches)} of {len(entries)} ticks:\n{details}")
+
+	end_x = auto.get_state()["snapshot"]["x"]
+	# coverage.map's spawn sits right against the door from local/door-prediction-bug.md; walking
+	# right from there covers 65 units before the next solid tile of the coverage course, measured
+	# by running 450 ticks of dir=1 without ever passing x=209. The threshold stays well under that
+	# so the check still fails for a tee that does not move, without depending on a golden position.
+	if end_x - start_x < 50:
+		raise AssertionError(f"tee did not move right under scripted input: {start_x} -> {end_x}")
+
+	auto.console("quit")
+	auto.close()
+	client.wait_for_exit()
+	server.exit()
+	server.wait_for_exit()
+
+
 @test(requires_mastersrv=True)
 def start_mastersrv(test_env):
 	mastersrv = test_env.mastersrv()
@@ -1003,6 +1093,7 @@ def main():
 	parser = argparse.ArgumentParser()
 	parser.add_argument("--keep-tmpdirs", action="store_true", help="keep temporary directories used for the tests")
 	parser.add_argument("--show-full-output", action="store_true", help="print the full stdout and stderr on test failures")
+	parser.add_argument("--test-automation", action="store_true", help="run tests that require compiling with -DAUTOMATION=ON")
 	parser.add_argument("--test-mastersrv", action="store_true", help="enforce testing of mastersrv")
 	parser.add_argument("--test-websockets", action="store_true", help="run tests that require compiling with websockets support")
 	parser.add_argument("--timeout-multiplier", type=float, default=1, help="multiply all timeouts by this value")
@@ -1036,6 +1127,7 @@ def main():
 		test_dir=args.builddir,
 		show_full_output=args.show_full_output,
 		test_websockets=args.test_websockets,
+		test_automation=args.test_automation,
 		valgrind_memcheck=args.valgrind_memcheck,
 		keep_tmpdirs=args.keep_tmpdirs,
 		timeout_multiplier=args.timeout_multiplier,
