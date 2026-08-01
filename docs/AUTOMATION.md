@@ -2,7 +2,7 @@
 
 Configure with `-DAUTOMATION=ON`. The option is off by default and must stay off in packaged builds; it compiles a loopback-only TCP control API into the client that can execute arbitrary console commands. Combine with `-DHEADLESS_CLIENT=ON` to drive the client without a display or GPU, which is how `scripts/integration_test.py --test-automation` runs it.
 
-The client opens the API when `cl_automation_port` is non-zero (`0` = disabled, the default). `cl_automation_fixed_step` switches `time_get()`/`time_get_nanoseconds()` to a virtual clock that only advances by that many microseconds per frame, removing OS scheduling jitter from timing; frame pacing (`beNice`, `cl_refresh_rate`) still uses the real clock, so this does not decouple the client from a real-time server. `cl_refresh_rate_inactive` defaults to `120` and overrides `cl_refresh_rate` whenever the window is inactive, which is always true under `-DHEADLESS_CLIENT=ON`; leaving it unset makes virtual time run at roughly 2.4x real time and breaks the fixed step's determinism. Set both together:
+The client opens the API when `cl_automation_port` is non-zero (`0` = disabled, the default). `cl_automation_fixed_step` switches `time_get()`/`time_get_nanoseconds()` to a virtual clock that only advances by that many microseconds per frame, removing OS scheduling jitter from timing; frame pacing (`beNice`, `cl_refresh_rate`) still uses the real clock, so this does not decouple the client from a real-time server. `cl_refresh_rate_inactive` defaults to `120` and overrides `cl_refresh_rate` whenever the window is inactive, which is always true under `-DHEADLESS_CLIENT=ON`; leaving it unset makes virtual time run at roughly 2.4x real time and breaks the fixed step's determinism. `cl_automation_fixed_step` is applied only when `cl_automation_port` is non-zero. Set these together:
 
 ```
 cl_automation_port 7801
@@ -42,7 +42,9 @@ Error reply:
 
 - `frame` increments once per client frame, starting at 0.
 - `game_tick` / `predicted_tick` are `-1` when the client is not `STATE_ONLINE`.
-- `error.code` is one of: `parse_error`, `bad_request`, `unknown_command`, `bad_args`, `not_online`, `no_character`, `timeout`, `internal`. A `parse_error` reply carries `"id": -1` when the id itself could not be parsed.
+- Issue one request at a time. `wait_ticks`/`wait_for` defer their reply while every other command replies within the frame, so a pipelined batch completes out of order.
+- Connection-level rejections (a second client connecting, an over-long line, invalid UTF-8) carry `"id": -1` and no `frame`/`game_tick`/`predicted_tick` envelope.
+- `error.code` is one of: `parse_error`, `bad_request`, `unknown_command`, `bad_args`, `not_online`, `no_character`, `timeout`. A `parse_error` reply carries `"id": -1` when the id itself could not be parsed.
 - A request is applied at the top of the frame it arrives in, and its reply is emitted after that same frame's network pump, prediction and render have completed, so `wait_ticks` and `get_state` need no polling or sleeping on the driver side.
 - `ping` returns `{"protocol": 1, "version": "<GAME_RELEASE_VERSION>"}`. A driver should check `protocol == 1` on connect and refuse to proceed otherwise.
 
@@ -78,14 +80,14 @@ Error reply:
 `get_status` result:
 
 ```json
-{"state": "online", "prev_game_tick": int, "tick_speed": 50, "local_time_us": int,
+{"state": "online", "prev_game_tick": int, "tick_speed": 50, "local_time_ms": int,
  "frame_time_us": int, "server_address": string, "map_name": string,
  "local_client_id": int, "dummy": int, "dummy_connected": bool,
  "menus_active": bool, "editor_active": bool, "connection_problems": bool,
  "fixed_step_us": int}
 ```
 
-`menus_active` matters for scripted input: while the menu or chat is open, `SnapInput` strips `PLAYERFLAG_PLAYING` and resets input, so `set_input` has no observable effect. Check `menus_active` before relying on scripted movement.
+`menus_active` reports `PLAYERFLAG_IN_MENU` only; chat sets `PLAYERFLAG_CHATTING` instead and is not covered by this field. It also reads `false` until the first `SnapInput` of an online session. It matters for scripted input because while the menu is open, `SnapInput` strips `PLAYERFLAG_PLAYING` and resets input, so `set_input` has no observable effect. Check `menus_active` before relying on scripted movement.
 
 `get_state` result:
 
@@ -111,7 +113,7 @@ The 14 core fields, shared by `predicted`/`snapshot`/`prediction_for_snapshot_ti
 
 ## Python driver
 
-`scripts/automation.py` is a stdlib-only client for the protocol above (`AutomationClient`), used by `scripts/integration_test.py`. `Client(..., automation_port=<port>)` launches a client with the six config values listed under "Enabling" already set, and `Client.automation(port)` waits for the listening log line and returns a connected `AutomationClient`.
+`scripts/automation.py` is a stdlib-only client for the protocol above (`AutomationClient`), used by `scripts/integration_test.py`. `Client(..., automation_port=<port>)` launches a client with every config value listed under "Enabling" already set, plus `cl_antiping 1` and `cl_antiping_weapons 1`, and `Client.automation(port)` waits for the listening log line and returns a connected `AutomationClient`.
 
 `scripts/integration_test.py automation_prediction_parity` (gated behind `--test-automation`) connects a headless client to a server running `data/maps/coverage.map`, scripts forward+jump movement, and asserts the predicted and authoritative character cores are exactly equal, tick by tick, over a 60-tick window. It is exact integer equality with no tolerance: any mismatch is a real divergence between `src/game/server/entities/` and `src/game/client/prediction/entities/`.
 

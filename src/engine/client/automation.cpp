@@ -646,7 +646,7 @@ void CAutomation::HandleLine(const std::string &Line)
 }
 
 // ---------------------------------------------------------------------------------------------
-// CAutomation: phase-1 commands
+// CAutomation: transport and console commands
 // ---------------------------------------------------------------------------------------------
 
 EDispatch CAutomation::CmdPing(const json_value *, int, std::string *pResultJson, CPendingRequest *, CError *)
@@ -747,16 +747,20 @@ EDispatch CAutomation::CmdGetStatus(const json_value *, int, std::string *pResul
 	Writer.WriteIntValue(m_pClient->PrevGameTick(g_Config.m_ClDummy));
 	Writer.WriteAttribute("tick_speed");
 	Writer.WriteIntValue(m_pClient->GameTickSpeed());
-	Writer.WriteAttribute("local_time_us");
-	Writer.WriteIntValue((int)(m_pClient->LocalTime() * 1000000.0f));
+	// Milliseconds, not microseconds: LocalTime() is a float holding cumulative uptime, so a
+	// microsecond scaling exceeds float's exact-integer range after ~17 seconds and overflows int
+	// after ~36 minutes. Milliseconds stay exact for over four hours, which keeps the "advances by
+	// exactly one fixed step per frame" property usable for a whole test run.
+	Writer.WriteAttribute("local_time_ms");
+	Writer.WriteIntValue((int)(m_pClient->LocalTime() * 1000.0f));
 	Writer.WriteAttribute("frame_time_us");
 	Writer.WriteIntValue((int)(m_pClient->RenderFrameTime() * 1000000.0f));
 	Writer.WriteAttribute("server_address");
 	Writer.WriteStrValue(aAddr);
 	Writer.WriteAttribute("map_name");
 	WriteUntrustedStrValue(Writer, m_pGameClient->Map()->IsLoaded() ? m_pGameClient->Map()->BaseName() : "");
-	// local_client_id/menus_active reflect the last state pushed via SetObservedState(), which
-	// is only wired up starting phase 3; until then they report their construction defaults.
+	// local_client_id/menus_active come from the last per-frame state push, so they are
+	// meaningless until the first SnapInput of an online session has run.
 	Writer.WriteAttribute("local_client_id");
 	Writer.WriteIntValue(m_LastLocalClientId);
 	Writer.WriteAttribute("dummy");
@@ -884,7 +888,7 @@ EDispatch CAutomation::CmdWaitFor(const json_value *pArgs, int, std::string *, C
 }
 
 // ---------------------------------------------------------------------------------------------
-// CAutomation: phase-3 raw input injection
+// CAutomation: raw input injection
 // ---------------------------------------------------------------------------------------------
 
 // Resolves the 'key'/'code' argument pair shared by key_down/key_up/key_press.
@@ -996,7 +1000,7 @@ EDispatch CAutomation::CmdMouseMove(const json_value *pArgs, int, std::string *p
 }
 
 // ---------------------------------------------------------------------------------------------
-// CAutomation: phase-3 scripted gameplay input
+// CAutomation: scripted gameplay input
 // ---------------------------------------------------------------------------------------------
 
 // Reads an optional integer argument. Returns false (leaving *pError untouched) when the
@@ -1091,7 +1095,10 @@ EDispatch CAutomation::CmdSetInput(const json_value *pArgs, int, std::string *pR
 		// value to the current one. Handing it a counter tracked independently of the one the
 		// character last saw would register presses the caller never asked for on the first
 		// scripted tick.
-		Scripted.m_Input.m_Fire = m_LastInput.m_Fire;
+		// Round up to even, i.e. to "not held". A physically held fire button leaves an odd
+		// counter, and seeding that verbatim would carry the held state into scripted input the
+		// caller never asked to hold.
+		Scripted.m_Input.m_Fire = m_LastInput.m_Fire + ((m_LastInput.m_Fire & 1) != 0 ? 1 : 0);
 		Scripted.m_Input.m_NextWeapon = m_LastInput.m_NextWeapon;
 		Scripted.m_Input.m_PrevWeapon = m_LastInput.m_PrevWeapon;
 	}
@@ -1168,13 +1175,20 @@ EDispatch CAutomation::CmdClearInput(const json_value *pArgs, int, std::string *
 		return EDispatch::ERROR;
 	}
 
+	// Request a reset on the way out as well as on the way in. Nothing else rewrites the movement
+	// fields when the override stops, and a headless client has no real key events to clear them,
+	// so without this a tee keeps running and holding jump forever after clear_input.
+	if(m_aScripted[Dummy].m_Active)
+	{
+		m_aNeedsInputReset[Dummy] = true;
+	}
 	m_aScripted[Dummy].m_Active = false;
 	*pResultJson = "{}";
 	return EDispatch::REPLY_NOW;
 }
 
 // ---------------------------------------------------------------------------------------------
-// CAutomation: phase-3 state readback
+// CAutomation: character state readback
 // ---------------------------------------------------------------------------------------------
 
 // The 14 fields CCharacterCore::Write produces, minus m_Tick (a dead-reckoning tick on the
@@ -1417,7 +1431,7 @@ EDispatch CAutomation::CmdGetParityHistory(const json_value *pArgs, int, std::st
 }
 
 // ---------------------------------------------------------------------------------------------
-// CAutomation: phase-3 IAutomation seams
+// CAutomation: IAutomation observation seams
 // ---------------------------------------------------------------------------------------------
 
 bool CAutomation::OverrideInput(int Dummy, CAutomationInput *pInput) const

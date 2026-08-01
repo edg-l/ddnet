@@ -209,6 +209,13 @@ int CControls::SnapInput(int *pData)
 			// aim vector the input path could never produce.
 			ClampMousePos();
 		}
+		else if(GameClient()->m_pAutomation->ConsumeInputReset(g_Config.m_ClDummy))
+		{
+			// Scripted input just stopped. Clear what it was holding, or the tee keeps moving
+			// under the last scripted values until a real key event replaces them.
+			ResetInput(g_Config.m_ClDummy);
+			m_aInputData[g_Config.m_ClDummy].m_Hook = 0;
+		}
 	}
 #endif
 

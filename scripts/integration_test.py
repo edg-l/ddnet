@@ -473,8 +473,14 @@ class Client(Runnable):
 				f"cl_automation_port {automation_port}",
 				"cl_automation_fixed_step 20000",
 				"cl_refresh_rate 50",
-				"cl_refresh_rate_inactive 50",  # see R6b: without this a headless client runs at 120 fps
-				"cl_antiping 1",  # see R6c: without these the client does not predict doors
+				# Defaults to 120 and takes precedence over cl_refresh_rate while the window is
+				# inactive, which is always true under HEADLESS_CLIENT. Left at its default the
+				# client runs at 120 fps and virtual time advances at 2.4x real, which the
+				# server-slaved CSmoothTime cannot absorb.
+				"cl_refresh_rate_inactive 50",
+				# CDoor is only predicted when m_WorldConfig.m_PredictWeapons is set, so without
+				# these the client walks through doors the server treats as solid.
+				"cl_antiping 1",
 				"cl_antiping_weapons 1",
 			]
 		super().__init__(

@@ -215,7 +215,7 @@ Detailed instructions can be found in [`docs/DEBUGGING.md`](docs/DEBUGGING.md).
 
 ## Client automation API
 
-A `-DAUTOMATION=ON` build exposes a TCP control API for driving the client from tests and tooling. Detailed instructions can be found in [`docs/automation.md`](docs/automation.md).
+A `-DAUTOMATION=ON` build exposes a TCP control API for driving the client from tests and tooling. Detailed instructions can be found in [`docs/AUTOMATION.md`](docs/AUTOMATION.md).
 
 ## Better Git Blame
 

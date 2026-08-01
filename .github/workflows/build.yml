@@ -270,6 +270,17 @@ jobs:
         cp src/mastersrv/target/debug/mastersrv${{ matrix.executable-suffix }} headless
         python scripts/integration_test.py --show-full-output --test-mastersrv --test-automation headless
 
+    # The automation tests drive a real-time server, so Valgrind's 25x slowdown causes prediction
+    # resets unrelated to what they measure and integration_test.py skips them under
+    # --valgrind-memcheck. Without this step they would never run on Linux, since the plain
+    # integration test step above does not run on ubuntu.
+    - name: Run automation integration tests
+      id: integration_test_automation
+      if: contains(matrix.os, 'ubuntu-latest')
+      continue-on-error: true
+      run: |
+        python scripts/integration_test.py --show-full-output --test-automation headless
+
     - name: Run integration tests with Valgrind's Memcheck and code coverage
       id: integration_test_valgrind
       if: contains(matrix.os, 'ubuntu-latest')
@@ -278,11 +289,11 @@ jobs:
         # Remove old coverage data:
         find headless -name '*.gcno' -o -name '*.gcda' -delete
         cp src/mastersrv/target/debug/mastersrv${{ matrix.executable-suffix }} headless
-        python scripts/integration_test.py --show-full-output --test-mastersrv --test-websockets --test-automation --valgrind-memcheck headless
+        python scripts/integration_test.py --show-full-output --test-mastersrv --test-websockets --valgrind-memcheck headless
 
     - name: Upload integration test results
       id: integration_test_artifact_upload
-      if: steps.integration_test.outcome == 'failure' || steps.integration_test_valgrind.outcome == 'failure'
+      if: steps.integration_test.outcome == 'failure' || steps.integration_test_automation.outcome == 'failure' || steps.integration_test_valgrind.outcome == 'failure'
       uses: actions/upload-artifact@v4
       with:
         name: ddnet-${{ matrix.name }}-integration-test-results
@@ -290,7 +301,7 @@ jobs:
         if-no-files-found: error
 
     - name: Summarize integration test results
-      if: steps.integration_test.outcome == 'failure' || steps.integration_test_valgrind.outcome == 'failure'
+      if: steps.integration_test.outcome == 'failure' || steps.integration_test_automation.outcome == 'failure' || steps.integration_test_valgrind.outcome == 'failure'
       shell: bash
       run: |
         echo -e "\033[31mFAILED: Integration test failed. Refer to the workflow logs and uploaded artifacts in the steps above for details.\033[m"
