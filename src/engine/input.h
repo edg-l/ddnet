@@ -117,6 +117,15 @@ public:
 	virtual void MouseModeAbsolute() = 0;
 	virtual bool MouseRelative(float *pX, float *pY) = 0;
 
+#if defined(CONF_AUTOMATION)
+	/** Injects a synthetic key event as if it came from SDL. Must be called after Update(). */
+	virtual void InjectKeyEvent(int Key, int Flags) = 0;
+	/** Injects a synthetic text input event. Must be called after Update(). */
+	virtual void InjectTextEvent(const char *pText) = 0;
+	/** Adds a synthetic relative cursor delta, consumed by the next MouseRelative() call. */
+	virtual void InjectMouseRelative(vec2 Delta) = 0;
+#endif
+
 	// touch
 	/**
 	 * Represents a unique finger for a current touch event. If there are multiple touch input devices, they

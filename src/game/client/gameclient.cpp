@@ -52,6 +52,7 @@
 #include <base/time.h>
 #include <base/vmath.h>
 
+#include <engine/automation.h>
 #include <engine/client/checksum.h>
 #include <engine/client/enums.h>
 #include <engine/demo.h>
@@ -115,6 +116,9 @@ void CGameClient::OnConsoleInit()
 	m_pDiscord = Kernel()->RequestInterface<IDiscord>();
 #if defined(CONF_AUTOUPDATE)
 	m_pUpdater = Kernel()->RequestInterface<IUpdater>();
+#endif
+#if defined(CONF_AUTOMATION)
+	m_pAutomation = Kernel()->RequestInterface<IAutomation>();
 #endif
 	m_pHttp = Kernel()->RequestInterface<IHttp>();
 	m_pMap = CreateMap();
@@ -502,7 +506,110 @@ void CGameClient::OnUpdate()
 	{
 		pComponent->OnUpdate();
 	}
+
+#if defined(CONF_AUTOMATION)
+	if(m_pAutomation != nullptr)
+	{
+		FillAutomationState();
+	}
+#endif
 }
+
+#if defined(CONF_AUTOMATION)
+void CGameClient::FillAutomationState()
+{
+	CNetObj_CharacterCore PredictedCore = {0};
+	m_PredictedChar.Write(&PredictedCore);
+
+	CAutomationCharacter Predicted;
+	Predicted.m_Tick = m_PredictedTick;
+	Predicted.m_X = PredictedCore.m_X;
+	Predicted.m_Y = PredictedCore.m_Y;
+	Predicted.m_VelX = PredictedCore.m_VelX;
+	Predicted.m_VelY = PredictedCore.m_VelY;
+	Predicted.m_Angle = PredictedCore.m_Angle;
+	Predicted.m_Direction = PredictedCore.m_Direction;
+	Predicted.m_Jumped = PredictedCore.m_Jumped;
+	Predicted.m_HookedPlayer = PredictedCore.m_HookedPlayer;
+	Predicted.m_HookState = PredictedCore.m_HookState;
+	Predicted.m_HookTick = PredictedCore.m_HookTick;
+	Predicted.m_HookX = PredictedCore.m_HookX;
+	Predicted.m_HookY = PredictedCore.m_HookY;
+	Predicted.m_HookDx = PredictedCore.m_HookDx;
+	Predicted.m_HookDy = PredictedCore.m_HookDy;
+	Predicted.m_ActiveWeapon = m_PredictedChar.m_ActiveWeapon;
+	Predicted.m_Jumps = m_PredictedChar.m_Jumps;
+	Predicted.m_JumpedTotal = m_PredictedChar.m_JumpedTotal;
+	Predicted.m_FreezeStart = m_PredictedChar.m_FreezeStart;
+	Predicted.m_FreezeEnd = m_PredictedChar.m_FreezeEnd;
+	Predicted.m_Solo = m_PredictedChar.m_Solo;
+	Predicted.m_Jetpack = m_PredictedChar.m_Jetpack;
+	Predicted.m_CollisionDisabled = m_PredictedChar.m_CollisionDisabled;
+	Predicted.m_EndlessHook = m_PredictedChar.m_EndlessHook;
+	Predicted.m_EndlessJump = m_PredictedChar.m_EndlessJump;
+	Predicted.m_HammerHitDisabled = m_PredictedChar.m_HammerHitDisabled;
+	Predicted.m_GrenadeHitDisabled = m_PredictedChar.m_GrenadeHitDisabled;
+	Predicted.m_LaserHitDisabled = m_PredictedChar.m_LaserHitDisabled;
+	Predicted.m_ShotgunHitDisabled = m_PredictedChar.m_ShotgunHitDisabled;
+	Predicted.m_HookHitDisabled = m_PredictedChar.m_HookHitDisabled;
+	Predicted.m_Super = m_PredictedChar.m_Super;
+	Predicted.m_Invincible = m_PredictedChar.m_Invincible;
+	Predicted.m_DeepFrozen = m_PredictedChar.m_DeepFrozen;
+	Predicted.m_LiveFrozen = m_PredictedChar.m_LiveFrozen;
+	// Mirrors the guard the prediction-error debug check uses at the end of OnPredict():
+	// OnPredict() early-returns without updating m_PredictedTick when there is no local
+	// character or the game is paused, so a stale m_PredictedTick means the fields above are
+	// stale too.
+	Predicted.m_Valid = m_Snap.m_LocalClientId >= 0 && g_Config.m_ClPredict && m_PredictedTick == Client()->PredGameTick(g_Config.m_ClDummy);
+
+	CAutomationCharacter Snapshot;
+	if(m_Snap.m_LocalClientId >= 0)
+	{
+		const CSnapState::CCharacterInfo &LocalCharacter = m_Snap.m_aCharacters[m_Snap.m_LocalClientId];
+		const CNetObj_Character &Cur = LocalCharacter.m_Cur;
+		// Client()->GameTick(), not m_Cur.m_Tick, which is a dead-reckoning tick the server
+		// writes as 0 in the normal case (see CCharacter::Snap).
+		Snapshot.m_Tick = Client()->GameTick(g_Config.m_ClDummy);
+		Snapshot.m_X = Cur.m_X;
+		Snapshot.m_Y = Cur.m_Y;
+		Snapshot.m_VelX = Cur.m_VelX;
+		Snapshot.m_VelY = Cur.m_VelY;
+		Snapshot.m_Angle = Cur.m_Angle;
+		Snapshot.m_Direction = Cur.m_Direction;
+		Snapshot.m_Jumped = Cur.m_Jumped;
+		Snapshot.m_HookedPlayer = Cur.m_HookedPlayer;
+		Snapshot.m_HookState = Cur.m_HookState;
+		Snapshot.m_HookTick = Cur.m_HookTick;
+		Snapshot.m_HookX = Cur.m_HookX;
+		Snapshot.m_HookY = Cur.m_HookY;
+		Snapshot.m_HookDx = Cur.m_HookDx;
+		Snapshot.m_HookDy = Cur.m_HookDy;
+		Snapshot.m_PlayerFlags = Cur.m_PlayerFlags;
+		Snapshot.m_Health = Cur.m_Health;
+		Snapshot.m_Armor = Cur.m_Armor;
+		Snapshot.m_AmmoCount = Cur.m_AmmoCount;
+		Snapshot.m_Weapon = Cur.m_Weapon;
+		Snapshot.m_Emote = Cur.m_Emote;
+		Snapshot.m_AttackTick = Cur.m_AttackTick;
+		Snapshot.m_Valid = LocalCharacter.m_Active;
+	}
+
+	CAutomationInput LastInput;
+	const CNetObj_PlayerInput &Last = m_Controls.m_aLastData[g_Config.m_ClDummy];
+	LastInput.m_Direction = Last.m_Direction;
+	LastInput.m_TargetX = Last.m_TargetX;
+	LastInput.m_TargetY = Last.m_TargetY;
+	LastInput.m_Jump = Last.m_Jump;
+	LastInput.m_Fire = Last.m_Fire;
+	LastInput.m_Hook = Last.m_Hook;
+	LastInput.m_PlayerFlags = Last.m_PlayerFlags;
+	LastInput.m_WantedWeapon = Last.m_WantedWeapon;
+	LastInput.m_NextWeapon = Last.m_NextWeapon;
+	LastInput.m_PrevWeapon = Last.m_PrevWeapon;
+
+	m_pAutomation->SetObservedState(Predicted, Snapshot, LastInput, m_Snap.m_LocalClientId);
+}
+#endif
 
 void CGameClient::OnInput(const IInput::CEvent &Event)
 {

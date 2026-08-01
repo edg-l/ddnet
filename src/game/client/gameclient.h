@@ -192,6 +192,11 @@ public:
 
 	CLocalServer m_LocalServer;
 
+#if defined(CONF_AUTOMATION)
+	// Public so CControls::SnapInput can reach it without an accessor.
+	class IAutomation *m_pAutomation = nullptr;
+#endif
+
 private:
 	std::vector<class CComponent *> m_vpAll;
 	std::vector<class CComponent *> m_vpInput;
@@ -227,6 +232,9 @@ private:
 
 	void ProcessEvents();
 	void UpdatePositions();
+#if defined(CONF_AUTOMATION)
+	void FillAutomationState();
+#endif
 
 	int m_EditorMovementDelay = 5;
 	void UpdateEditorIngameMoved();

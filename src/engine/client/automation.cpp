@@ -9,6 +9,7 @@
 
 #include <engine/console.h>
 #include <engine/input.h>
+#include <engine/keys.h>
 #include <engine/map.h>
 #include <engine/shared/config.h>
 #include <engine/shared/json.h>
@@ -439,6 +440,9 @@ void CAutomation::OnFrameEnd()
 		case EDeferKind::MAP_LOADED:
 			Done = m_pGameClient->Map()->IsLoaded() && str_comp(m_pGameClient->Map()->BaseName(), It->m_TargetMapName.c_str()) == 0;
 			break;
+		case EDeferKind::HAS_LOCAL_CHARACTER:
+			Done = m_HasLocalCharacter;
+			break;
 		}
 
 		if(Done)
@@ -587,6 +591,15 @@ void CAutomation::HandleLine(const std::string &Line)
 		{"get_status", &CAutomation::CmdGetStatus},
 		{"wait_ticks", &CAutomation::CmdWaitTicks},
 		{"wait_for", &CAutomation::CmdWaitFor},
+		{"key_down", &CAutomation::CmdKeyDown},
+		{"key_up", &CAutomation::CmdKeyUp},
+		{"key_press", &CAutomation::CmdKeyPress},
+		{"text", &CAutomation::CmdText},
+		{"mouse_move", &CAutomation::CmdMouseMove},
+		{"set_input", &CAutomation::CmdSetInput},
+		{"clear_input", &CAutomation::CmdClearInput},
+		{"get_state", &CAutomation::CmdGetState},
+		{"get_parity_history", &CAutomation::CmdGetParityHistory},
 	};
 
 	FCommandHandler pfnHandler = nullptr;
@@ -848,10 +861,8 @@ EDispatch CAutomation::CmdWaitFor(const json_value *pArgs, int, std::string *, C
 	}
 	else if(str_comp(pPredicate, "has_local_character") == 0)
 	{
-		// Only meaningful once the phase-3 state push reports a valid snapshot character.
-		pError->m_pCode = "internal";
-		str_copy(pError->m_aMessage, "has_local_character is not implemented until phase 3");
-		return EDispatch::ERROR;
+		pPending->m_Kind = EDeferKind::HAS_LOCAL_CHARACTER;
+		return EDispatch::DEFER;
 	}
 	else if(str_comp(pPredicate, "map_loaded") == 0)
 	{
@@ -873,12 +884,553 @@ EDispatch CAutomation::CmdWaitFor(const json_value *pArgs, int, std::string *, C
 }
 
 // ---------------------------------------------------------------------------------------------
-// CAutomation: phase-3 seams (no-ops in phase 1)
+// CAutomation: phase-3 raw input injection
 // ---------------------------------------------------------------------------------------------
 
-bool CAutomation::OverrideInput(int, CAutomationInput *) const
+// Resolves the 'key'/'code' argument pair shared by key_down/key_up/key_press.
+static bool ResolveKeyArg(const json_value *pArgs, IInput *pInput, int *pKey, CError *pError)
 {
+	const json_value *pKeyValue = json_object_get(pArgs, "key");
+	if(pKeyValue->type == json_string)
+	{
+		*pKey = pInput->FindKeyByName(json_string_get(pKeyValue));
+		if(*pKey == KEY_UNKNOWN)
+		{
+			pError->m_pCode = "bad_args";
+			str_format(pError->m_aMessage, sizeof(pError->m_aMessage), "unknown key '%s'", json_string_get(pKeyValue));
+			return false;
+		}
+		return true;
+	}
+
+	const json_value *pCodeValue = json_object_get(pArgs, "code");
+	if(pCodeValue->type == json_integer)
+	{
+		const int Code = json_int_get(pCodeValue);
+		if(Code < KEY_FIRST || Code >= KEY_LAST)
+		{
+			pError->m_pCode = "bad_args";
+			str_format(pError->m_aMessage, sizeof(pError->m_aMessage), "'code' out of range: %d", Code);
+			return false;
+		}
+		*pKey = Code;
+		return true;
+	}
+
+	pError->m_pCode = "bad_args";
+	str_copy(pError->m_aMessage, "either 'key' or 'code' is required");
 	return false;
+}
+
+EDispatch CAutomation::CmdKeyDown(const json_value *pArgs, int, std::string *pResultJson, CPendingRequest *, CError *pError)
+{
+	int Key;
+	if(!ResolveKeyArg(pArgs, m_pInput, &Key, pError))
+	{
+		return EDispatch::ERROR;
+	}
+	m_pInput->InjectKeyEvent(Key, IInput::FLAG_PRESS);
+	*pResultJson = "{}";
+	return EDispatch::REPLY_NOW;
+}
+
+EDispatch CAutomation::CmdKeyUp(const json_value *pArgs, int, std::string *pResultJson, CPendingRequest *, CError *pError)
+{
+	int Key;
+	if(!ResolveKeyArg(pArgs, m_pInput, &Key, pError))
+	{
+		return EDispatch::ERROR;
+	}
+	m_pInput->InjectKeyEvent(Key, IInput::FLAG_RELEASE);
+	*pResultJson = "{}";
+	return EDispatch::REPLY_NOW;
+}
+
+EDispatch CAutomation::CmdKeyPress(const json_value *pArgs, int, std::string *pResultJson, CPendingRequest *, CError *pError)
+{
+	int Key;
+	if(!ResolveKeyArg(pArgs, m_pInput, &Key, pError))
+	{
+		return EDispatch::ERROR;
+	}
+	m_pInput->InjectKeyEvent(Key, IInput::FLAG_PRESS);
+	m_pInput->InjectKeyEvent(Key, IInput::FLAG_RELEASE);
+	*pResultJson = "{}";
+	return EDispatch::REPLY_NOW;
+}
+
+EDispatch CAutomation::CmdText(const json_value *pArgs, int, std::string *pResultJson, CPendingRequest *, CError *pError)
+{
+	const json_value *pTextValue = json_object_get(pArgs, "text");
+	if(pTextValue->type != json_string)
+	{
+		pError->m_pCode = "bad_args";
+		str_copy(pError->m_aMessage, "'text' must be a string");
+		return EDispatch::ERROR;
+	}
+	const char *pText = json_string_get(pTextValue);
+	if(!str_utf8_check(pText))
+	{
+		pError->m_pCode = "bad_args";
+		str_copy(pError->m_aMessage, "'text' must be valid utf-8");
+		return EDispatch::ERROR;
+	}
+	m_pInput->InjectTextEvent(pText);
+	*pResultJson = "{}";
+	return EDispatch::REPLY_NOW;
+}
+
+EDispatch CAutomation::CmdMouseMove(const json_value *pArgs, int, std::string *pResultJson, CPendingRequest *, CError *pError)
+{
+	const json_value *pDxValue = json_object_get(pArgs, "dx");
+	const json_value *pDyValue = json_object_get(pArgs, "dy");
+	if(pDxValue->type != json_integer || pDyValue->type != json_integer)
+	{
+		pError->m_pCode = "bad_args";
+		str_copy(pError->m_aMessage, "'dx' and 'dy' must be integers");
+		return EDispatch::ERROR;
+	}
+	m_pInput->InjectMouseRelative(vec2((float)json_int_get(pDxValue), (float)json_int_get(pDyValue)));
+	*pResultJson = "{}";
+	return EDispatch::REPLY_NOW;
+}
+
+// ---------------------------------------------------------------------------------------------
+// CAutomation: phase-3 scripted gameplay input
+// ---------------------------------------------------------------------------------------------
+
+// Reads an optional integer argument. Returns false (leaving *pError untouched) when the
+// argument is absent, so callers can distinguish "not given" from "given but wrong type".
+static bool ReadOptionalIntArg(const json_value *pArgs, const char *pName, int *pOut, bool *pPresent, CError *pError)
+{
+	const json_value *pValue = json_object_get(pArgs, pName);
+	if(pValue->type == json_none)
+	{
+		*pPresent = false;
+		return true;
+	}
+	if(pValue->type != json_integer)
+	{
+		pError->m_pCode = "bad_args";
+		str_format(pError->m_aMessage, sizeof(pError->m_aMessage), "'%s' must be an integer", pName);
+		return false;
+	}
+	*pOut = json_int_get(pValue);
+	*pPresent = true;
+	return true;
+}
+
+EDispatch CAutomation::CmdSetInput(const json_value *pArgs, int, std::string *pResultJson, CPendingRequest *, CError *pError)
+{
+	int Dummy = g_Config.m_ClDummy;
+	bool DummyPresent;
+	if(!ReadOptionalIntArg(pArgs, "dummy", &Dummy, &DummyPresent, pError))
+	{
+		return EDispatch::ERROR;
+	}
+	if(DummyPresent && (Dummy < 0 || Dummy >= NUM_DUMMIES))
+	{
+		pError->m_pCode = "bad_args";
+		str_format(pError->m_aMessage, sizeof(pError->m_aMessage), "'dummy' out of range: %d", Dummy);
+		return EDispatch::ERROR;
+	}
+
+	// Validate every argument before applying any of them, so a rejected request never leaves
+	// the scripted input partially updated.
+	bool DirPresent, JumpPresent, HookPresent, FirePresent, TargetXPresent, TargetYPresent, WeaponPresent, NextWeaponPresent, PrevWeaponPresent;
+	int Dir = 0, Jump = 0, Hook = 0, Fire = 0, TargetX = 0, TargetY = 0, Weapon = 0, NextWeapon = 0, PrevWeapon = 0;
+	if(!ReadOptionalIntArg(pArgs, "dir", &Dir, &DirPresent, pError) ||
+		!ReadOptionalIntArg(pArgs, "jump", &Jump, &JumpPresent, pError) ||
+		!ReadOptionalIntArg(pArgs, "hook", &Hook, &HookPresent, pError) ||
+		!ReadOptionalIntArg(pArgs, "fire", &Fire, &FirePresent, pError) ||
+		!ReadOptionalIntArg(pArgs, "target_x", &TargetX, &TargetXPresent, pError) ||
+		!ReadOptionalIntArg(pArgs, "target_y", &TargetY, &TargetYPresent, pError) ||
+		!ReadOptionalIntArg(pArgs, "weapon", &Weapon, &WeaponPresent, pError) ||
+		!ReadOptionalIntArg(pArgs, "next_weapon", &NextWeapon, &NextWeaponPresent, pError) ||
+		!ReadOptionalIntArg(pArgs, "prev_weapon", &PrevWeapon, &PrevWeaponPresent, pError))
+	{
+		return EDispatch::ERROR;
+	}
+	if(DirPresent && (Dir < -1 || Dir > 1))
+	{
+		pError->m_pCode = "bad_args";
+		str_format(pError->m_aMessage, sizeof(pError->m_aMessage), "'dir' out of range: %d", Dir);
+		return EDispatch::ERROR;
+	}
+	if(JumpPresent && (Jump != 0 && Jump != 1))
+	{
+		pError->m_pCode = "bad_args";
+		str_format(pError->m_aMessage, sizeof(pError->m_aMessage), "'jump' out of range: %d", Jump);
+		return EDispatch::ERROR;
+	}
+	if(HookPresent && (Hook != 0 && Hook != 1))
+	{
+		pError->m_pCode = "bad_args";
+		str_format(pError->m_aMessage, sizeof(pError->m_aMessage), "'hook' out of range: %d", Hook);
+		return EDispatch::ERROR;
+	}
+	if(FirePresent && (Fire != 0 && Fire != 1))
+	{
+		pError->m_pCode = "bad_args";
+		str_format(pError->m_aMessage, sizeof(pError->m_aMessage), "'fire' out of range: %d", Fire);
+		return EDispatch::ERROR;
+	}
+	if(WeaponPresent && (Weapon < 0 || Weapon > 5))
+	{
+		pError->m_pCode = "bad_args";
+		str_format(pError->m_aMessage, sizeof(pError->m_aMessage), "'weapon' out of range: %d", Weapon);
+		return EDispatch::ERROR;
+	}
+
+	CScriptedInput &Scripted = m_aScripted[Dummy];
+	if(!Scripted.m_Active)
+	{
+		// Seed the press counters from the live ones before applying anything. m_Fire,
+		// m_NextWeapon and m_PrevWeapon are INPUT_STATE_MASK counters that the character reads
+		// through CountInput, which counts every parity flip while walking from the previous
+		// value to the current one. Handing it a counter tracked independently of the one the
+		// character last saw would register presses the caller never asked for on the first
+		// scripted tick.
+		Scripted.m_Input.m_Fire = m_LastInput.m_Fire;
+		Scripted.m_Input.m_NextWeapon = m_LastInput.m_NextWeapon;
+		Scripted.m_Input.m_PrevWeapon = m_LastInput.m_PrevWeapon;
+	}
+	if(DirPresent)
+	{
+		Scripted.m_Input.m_Direction = Dir;
+	}
+	if(JumpPresent)
+	{
+		Scripted.m_Input.m_Jump = Jump;
+	}
+	if(HookPresent)
+	{
+		Scripted.m_Input.m_Hook = Hook;
+	}
+	if(FirePresent)
+	{
+		// m_Fire is a counter in the protocol; odd means held. Adjust the parity instead of
+		// setting the value directly, so a held-fire request across several set_input calls
+		// does not keep incrementing it every call.
+		const bool WantHeld = Fire != 0;
+		const bool CurrentlyHeld = (Scripted.m_Input.m_Fire & 1) != 0;
+		if(WantHeld != CurrentlyHeld)
+		{
+			Scripted.m_Input.m_Fire++;
+		}
+	}
+	if(TargetXPresent)
+	{
+		Scripted.m_Input.m_TargetX = TargetX;
+	}
+	if(TargetYPresent)
+	{
+		Scripted.m_Input.m_TargetY = TargetY;
+	}
+	if(WeaponPresent)
+	{
+		Scripted.m_Input.m_WantedWeapon = Weapon;
+	}
+	// Press counts, not raw counter values: the character reads these through CountInput, so
+	// assigning the request's integer directly would make the same request twice in a row a
+	// silent no-op the second time. Adding the count registers exactly that many presses.
+	if(NextWeaponPresent)
+	{
+		Scripted.m_Input.m_NextWeapon += NextWeapon;
+	}
+	if(PrevWeaponPresent)
+	{
+		Scripted.m_Input.m_PrevWeapon += PrevWeapon;
+	}
+
+	if(!Scripted.m_Active)
+	{
+		m_aNeedsInputReset[Dummy] = true;
+	}
+	Scripted.m_Active = true;
+
+	*pResultJson = "{}";
+	return EDispatch::REPLY_NOW;
+}
+
+EDispatch CAutomation::CmdClearInput(const json_value *pArgs, int, std::string *pResultJson, CPendingRequest *, CError *pError)
+{
+	int Dummy = g_Config.m_ClDummy;
+	bool DummyPresent;
+	if(!ReadOptionalIntArg(pArgs, "dummy", &Dummy, &DummyPresent, pError))
+	{
+		return EDispatch::ERROR;
+	}
+	if(DummyPresent && (Dummy < 0 || Dummy >= NUM_DUMMIES))
+	{
+		pError->m_pCode = "bad_args";
+		str_format(pError->m_aMessage, sizeof(pError->m_aMessage), "'dummy' out of range: %d", Dummy);
+		return EDispatch::ERROR;
+	}
+
+	m_aScripted[Dummy].m_Active = false;
+	*pResultJson = "{}";
+	return EDispatch::REPLY_NOW;
+}
+
+// ---------------------------------------------------------------------------------------------
+// CAutomation: phase-3 state readback
+// ---------------------------------------------------------------------------------------------
+
+// The 14 fields CCharacterCore::Write produces, minus m_Tick (a dead-reckoning tick on the
+// snapshot side, see CCharacter::Snap, not comparable between predicted and authoritative state).
+static void WriteCoreFields(CJsonWriter &Writer, const CAutomationCharacter &Char)
+{
+	Writer.WriteAttribute("x");
+	Writer.WriteIntValue(Char.m_X);
+	Writer.WriteAttribute("y");
+	Writer.WriteIntValue(Char.m_Y);
+	Writer.WriteAttribute("vel_x");
+	Writer.WriteIntValue(Char.m_VelX);
+	Writer.WriteAttribute("vel_y");
+	Writer.WriteIntValue(Char.m_VelY);
+	Writer.WriteAttribute("angle");
+	Writer.WriteIntValue(Char.m_Angle);
+	Writer.WriteAttribute("direction");
+	Writer.WriteIntValue(Char.m_Direction);
+	Writer.WriteAttribute("jumped");
+	Writer.WriteIntValue(Char.m_Jumped);
+	Writer.WriteAttribute("hooked_player");
+	Writer.WriteIntValue(Char.m_HookedPlayer);
+	Writer.WriteAttribute("hook_state");
+	Writer.WriteIntValue(Char.m_HookState);
+	Writer.WriteAttribute("hook_tick");
+	Writer.WriteIntValue(Char.m_HookTick);
+	Writer.WriteAttribute("hook_x");
+	Writer.WriteIntValue(Char.m_HookX);
+	Writer.WriteAttribute("hook_y");
+	Writer.WriteIntValue(Char.m_HookY);
+	Writer.WriteAttribute("hook_dx");
+	Writer.WriteIntValue(Char.m_HookDx);
+	Writer.WriteAttribute("hook_dy");
+	Writer.WriteIntValue(Char.m_HookDy);
+}
+
+static void WritePredictedCharacter(CJsonWriter &Writer, const CAutomationCharacter &Char)
+{
+	Writer.BeginObject();
+	Writer.WriteAttribute("tick");
+	Writer.WriteIntValue(Char.m_Tick);
+	WriteCoreFields(Writer, Char);
+	Writer.WriteAttribute("active_weapon");
+	Writer.WriteIntValue(Char.m_ActiveWeapon);
+	Writer.WriteAttribute("jumps");
+	Writer.WriteIntValue(Char.m_Jumps);
+	Writer.WriteAttribute("jumped_total");
+	Writer.WriteIntValue(Char.m_JumpedTotal);
+	Writer.WriteAttribute("freeze_start");
+	Writer.WriteIntValue(Char.m_FreezeStart);
+	Writer.WriteAttribute("freeze_end");
+	Writer.WriteIntValue(Char.m_FreezeEnd);
+	Writer.WriteAttribute("solo");
+	Writer.WriteBoolValue(Char.m_Solo);
+	Writer.WriteAttribute("jetpack");
+	Writer.WriteBoolValue(Char.m_Jetpack);
+	Writer.WriteAttribute("collision_disabled");
+	Writer.WriteBoolValue(Char.m_CollisionDisabled);
+	Writer.WriteAttribute("endless_hook");
+	Writer.WriteBoolValue(Char.m_EndlessHook);
+	Writer.WriteAttribute("endless_jump");
+	Writer.WriteBoolValue(Char.m_EndlessJump);
+	Writer.WriteAttribute("hammer_hit_disabled");
+	Writer.WriteBoolValue(Char.m_HammerHitDisabled);
+	Writer.WriteAttribute("grenade_hit_disabled");
+	Writer.WriteBoolValue(Char.m_GrenadeHitDisabled);
+	Writer.WriteAttribute("laser_hit_disabled");
+	Writer.WriteBoolValue(Char.m_LaserHitDisabled);
+	Writer.WriteAttribute("shotgun_hit_disabled");
+	Writer.WriteBoolValue(Char.m_ShotgunHitDisabled);
+	Writer.WriteAttribute("hook_hit_disabled");
+	Writer.WriteBoolValue(Char.m_HookHitDisabled);
+	Writer.WriteAttribute("super");
+	Writer.WriteBoolValue(Char.m_Super);
+	Writer.WriteAttribute("invincible");
+	Writer.WriteBoolValue(Char.m_Invincible);
+	Writer.WriteAttribute("deep_frozen");
+	Writer.WriteBoolValue(Char.m_DeepFrozen);
+	Writer.WriteAttribute("live_frozen");
+	Writer.WriteBoolValue(Char.m_LiveFrozen);
+	Writer.EndObject();
+}
+
+static void WriteSnapshotCharacter(CJsonWriter &Writer, const CAutomationCharacter &Char)
+{
+	Writer.BeginObject();
+	Writer.WriteAttribute("tick");
+	Writer.WriteIntValue(Char.m_Tick);
+	WriteCoreFields(Writer, Char);
+	Writer.WriteAttribute("player_flags");
+	Writer.WriteIntValue(Char.m_PlayerFlags);
+	Writer.WriteAttribute("health");
+	Writer.WriteIntValue(Char.m_Health);
+	Writer.WriteAttribute("armor");
+	Writer.WriteIntValue(Char.m_Armor);
+	Writer.WriteAttribute("ammo_count");
+	Writer.WriteIntValue(Char.m_AmmoCount);
+	Writer.WriteAttribute("weapon");
+	Writer.WriteIntValue(Char.m_Weapon);
+	Writer.WriteAttribute("emote");
+	Writer.WriteIntValue(Char.m_Emote);
+	Writer.WriteAttribute("attack_tick");
+	Writer.WriteIntValue(Char.m_AttackTick);
+	Writer.EndObject();
+}
+
+EDispatch CAutomation::CmdGetState(const json_value *, int, std::string *pResultJson, CPendingRequest *, CError *pError)
+{
+	if(m_pClient->State() != IClient::STATE_ONLINE)
+	{
+		pError->m_pCode = "not_online";
+		str_copy(pError->m_aMessage, "client is not online");
+		return EDispatch::ERROR;
+	}
+	if(!m_LastSnapshot.m_Valid)
+	{
+		pError->m_pCode = "no_character";
+		str_copy(pError->m_aMessage, "no active local character in the last snapshot");
+		return EDispatch::ERROR;
+	}
+
+	CJsonStringWriter Writer;
+	Writer.BeginObject();
+
+	Writer.WriteAttribute("local_client_id");
+	Writer.WriteIntValue(m_LastLocalClientId);
+
+	Writer.WriteAttribute("predicted");
+	if(m_LastPredicted.m_Valid)
+	{
+		WritePredictedCharacter(Writer, m_LastPredicted);
+	}
+	else
+	{
+		Writer.WriteNullValue();
+	}
+
+	Writer.WriteAttribute("snapshot");
+	WriteSnapshotCharacter(Writer, m_LastSnapshot);
+
+	Writer.WriteAttribute("prediction_for_snapshot_tick");
+	const CAutomationCharacter &PredictionForSnapshotTick = m_aPredictionHistory[m_LastSnapshot.m_Tick % 200];
+	if(PredictionForSnapshotTick.m_Valid && PredictionForSnapshotTick.m_Tick == m_LastSnapshot.m_Tick)
+	{
+		Writer.BeginObject();
+		Writer.WriteAttribute("tick");
+		Writer.WriteIntValue(PredictionForSnapshotTick.m_Tick);
+		WriteCoreFields(Writer, PredictionForSnapshotTick);
+		Writer.EndObject();
+	}
+	else
+	{
+		Writer.WriteNullValue();
+	}
+
+	Writer.WriteAttribute("input");
+	Writer.BeginObject();
+	Writer.WriteAttribute("direction");
+	Writer.WriteIntValue(m_LastInput.m_Direction);
+	Writer.WriteAttribute("target_x");
+	Writer.WriteIntValue(m_LastInput.m_TargetX);
+	Writer.WriteAttribute("target_y");
+	Writer.WriteIntValue(m_LastInput.m_TargetY);
+	Writer.WriteAttribute("jump");
+	Writer.WriteIntValue(m_LastInput.m_Jump);
+	Writer.WriteAttribute("fire");
+	Writer.WriteIntValue(m_LastInput.m_Fire);
+	Writer.WriteAttribute("hook");
+	Writer.WriteIntValue(m_LastInput.m_Hook);
+	Writer.WriteAttribute("player_flags");
+	Writer.WriteIntValue(m_LastInput.m_PlayerFlags);
+	Writer.WriteAttribute("wanted_weapon");
+	Writer.WriteIntValue(m_LastInput.m_WantedWeapon);
+	Writer.WriteAttribute("next_weapon");
+	Writer.WriteIntValue(m_LastInput.m_NextWeapon);
+	Writer.WriteAttribute("prev_weapon");
+	Writer.WriteIntValue(m_LastInput.m_PrevWeapon);
+	Writer.EndObject();
+
+	Writer.EndObject();
+	*pResultJson = CompactJson(Writer.GetOutputString());
+	return EDispatch::REPLY_NOW;
+}
+
+EDispatch CAutomation::CmdGetParityHistory(const json_value *pArgs, int, std::string *pResultJson, CPendingRequest *, CError *pError)
+{
+	if(m_pClient->State() != IClient::STATE_ONLINE)
+	{
+		pError->m_pCode = "not_online";
+		str_copy(pError->m_aMessage, "client is not online");
+		return EDispatch::ERROR;
+	}
+
+	int Max = (int)MAX_PARITY_ENTRIES;
+	const json_value *pMaxValue = json_object_get(pArgs, "max");
+	if(pMaxValue->type == json_integer)
+	{
+		Max = json_int_get(pMaxValue);
+	}
+	if(Max < 0)
+	{
+		Max = 0;
+	}
+
+	CJsonStringWriter Writer;
+	Writer.BeginObject();
+
+	// Reported once, then cleared: there is no per-entry granularity to preserve across a call
+	// that may not drain the whole deque.
+	Writer.WriteAttribute("truncated");
+	Writer.WriteBoolValue(m_ParityTruncated);
+	m_ParityTruncated = false;
+
+	Writer.WriteAttribute("entries");
+	Writer.BeginArray();
+	int Count = 0;
+	while(!m_vParityHistory.empty() && Count < Max)
+	{
+		const CParityEntry &Entry = m_vParityHistory.front();
+		Writer.BeginObject();
+		Writer.WriteAttribute("tick");
+		Writer.WriteIntValue(Entry.m_Tick);
+		Writer.WriteAttribute("predicted");
+		Writer.BeginObject();
+		WriteCoreFields(Writer, Entry.m_Predicted);
+		Writer.EndObject();
+		Writer.WriteAttribute("snapshot");
+		Writer.BeginObject();
+		WriteCoreFields(Writer, Entry.m_Snapshot);
+		Writer.EndObject();
+		Writer.EndObject();
+		m_vParityHistory.pop_front();
+		Count++;
+	}
+	Writer.EndArray();
+
+	Writer.EndObject();
+	*pResultJson = CompactJson(Writer.GetOutputString());
+	return EDispatch::REPLY_NOW;
+}
+
+// ---------------------------------------------------------------------------------------------
+// CAutomation: phase-3 IAutomation seams
+// ---------------------------------------------------------------------------------------------
+
+bool CAutomation::OverrideInput(int Dummy, CAutomationInput *pInput) const
+{
+	*pInput = m_aScripted[Dummy].m_Input;
+	return m_aScripted[Dummy].m_Active;
+}
+
+bool CAutomation::ConsumeInputReset(int Dummy)
+{
+	const bool NeedsReset = m_aNeedsInputReset[Dummy];
+	m_aNeedsInputReset[Dummy] = false;
+	return NeedsReset;
 }
 
 void CAutomation::SetObservedState(const CAutomationCharacter &Predicted, const CAutomationCharacter &Snapshot,
@@ -888,6 +1440,33 @@ void CAutomation::SetObservedState(const CAutomationCharacter &Predicted, const 
 	m_LastSnapshot = Snapshot;
 	m_LastInput = LastInput;
 	m_LastLocalClientId = LocalClientId;
+
+	if(Predicted.m_Valid && Predicted.m_Tick > m_LastPredictedTick)
+	{
+		m_aPredictionHistory[Predicted.m_Tick % 200] = Predicted;
+		m_LastPredictedTick = Predicted.m_Tick;
+	}
+
+	if(Snapshot.m_Valid && Snapshot.m_Tick > m_LastParityTick)
+	{
+		const CAutomationCharacter &PredictionForTick = m_aPredictionHistory[Snapshot.m_Tick % 200];
+		if(PredictionForTick.m_Valid && PredictionForTick.m_Tick == Snapshot.m_Tick)
+		{
+			CParityEntry Entry;
+			Entry.m_Tick = Snapshot.m_Tick;
+			Entry.m_Predicted = PredictionForTick;
+			Entry.m_Snapshot = Snapshot;
+			m_vParityHistory.push_back(std::move(Entry));
+			if(m_vParityHistory.size() > MAX_PARITY_ENTRIES)
+			{
+				m_vParityHistory.pop_front();
+				m_ParityTruncated = true;
+			}
+		}
+		m_LastParityTick = Snapshot.m_Tick;
+	}
+
+	m_HasLocalCharacter = Snapshot.m_Valid;
 }
 
 IAutomation *CreateAutomation()

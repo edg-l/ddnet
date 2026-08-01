@@ -7,10 +7,12 @@
 
 #include <engine/automation.h>
 #include <engine/client.h>
+#include <engine/client/enums.h>
 #include <engine/console.h>
 #include <engine/shared/json.h>
 
 #include <chrono>
+#include <deque>
 #include <string>
 #include <vector>
 
@@ -68,6 +70,7 @@ enum class EDeferKind
 	GAME_TICK_AT_LEAST,
 	PREDICTED_TICK_AT_LEAST,
 	MAP_LOADED,
+	HAS_LOCAL_CHARACTER,
 };
 
 /** A `wait_ticks`/`wait_for` request whose completion is evaluated once per frame. */
@@ -108,6 +111,23 @@ public:
 	CError m_Error;
 };
 
+/** Scripted input for one dummy slot, applied by CControls::SnapInput while m_Active. */
+class CScriptedInput
+{
+public:
+	bool m_Active = false;
+	CAutomationInput m_Input;
+};
+
+/** One tick's worth of predicted and authoritative core state, for get_parity_history. */
+class CParityEntry
+{
+public:
+	int m_Tick = -1;
+	CAutomationCharacter m_Predicted;
+	CAutomationCharacter m_Snapshot;
+};
+
 class CAutomation : public IAutomation
 {
 	CAutomationConnection m_Connection;
@@ -120,12 +140,29 @@ class CAutomation : public IAutomation
 	IGameClient *m_pGameClient = nullptr;
 	IEngineInput *m_pInput = nullptr;
 
-	// Phase-3 observed state, pushed once per frame by SetObservedState(). Nothing calls it
-	// yet, so these stay at their construction defaults until the state-push hook lands.
+	// Observed state, pushed once per frame by SetObservedState().
 	CAutomationCharacter m_LastPredicted;
 	CAutomationCharacter m_LastSnapshot;
 	CAutomationInput m_LastInput;
 	int m_LastLocalClientId = -1;
+
+	// Scripted input, applied by CControls::SnapInput via OverrideInput().
+	CScriptedInput m_aScripted[NUM_DUMMIES];
+	// Consumed by ConsumeInputReset(): true once per inactive -> active transition.
+	bool m_aNeedsInputReset[NUM_DUMMIES] = {};
+
+	// Prediction ring, 4s at 50Hz, matching the CClient::m_aInputs[200] convention.
+	CAutomationCharacter m_aPredictionHistory[200];
+	int m_LastPredictedTick = -1;
+
+	// Per-tick predicted/authoritative pairs, drained by get_parity_history.
+	std::deque<CParityEntry> m_vParityHistory;
+	static constexpr size_t MAX_PARITY_ENTRIES = 400;
+	bool m_ParityTruncated = false;
+	int m_LastParityTick = -1;
+
+	// Feeds the has_local_character wait_for predicate.
+	bool m_HasLocalCharacter = false;
 
 	using FCommandHandler = EDispatch (CAutomation::*)(const json_value *pArgs, int Id, std::string *pResultJson, CPendingRequest *pPending, CError *pError);
 
@@ -144,10 +181,26 @@ class CAutomation : public IAutomation
 	/**
 	 * `wait_for` predicates: `state` (string `value`), `game_tick_at_least` (integer `value`),
 	 * `predicted_tick_at_least` (integer `value`), `map_loaded` (string `name`), and
-	 * `has_local_character`, which reports the `internal` error code until phase 3 wires up
-	 * SetObservedState() and gives it something to check.
+	 * `has_local_character` (no extra args; true once SetObservedState() has reported a valid
+	 * snapshot character).
 	 */
 	EDispatch CmdWaitFor(const json_value *pArgs, int Id, std::string *pResultJson, CPendingRequest *pPending, CError *pError);
+
+	// Raw input injection, applied during OnFrameBegin so events carry the frame's input
+	// counter and are consumed this frame (see CInput::ConsumeEvents).
+	EDispatch CmdKeyDown(const json_value *pArgs, int Id, std::string *pResultJson, CPendingRequest *pPending, CError *pError);
+	EDispatch CmdKeyUp(const json_value *pArgs, int Id, std::string *pResultJson, CPendingRequest *pPending, CError *pError);
+	EDispatch CmdKeyPress(const json_value *pArgs, int Id, std::string *pResultJson, CPendingRequest *pPending, CError *pError);
+	EDispatch CmdText(const json_value *pArgs, int Id, std::string *pResultJson, CPendingRequest *pPending, CError *pError);
+	EDispatch CmdMouseMove(const json_value *pArgs, int Id, std::string *pResultJson, CPendingRequest *pPending, CError *pError);
+
+	// Scripted gameplay input, applied by CControls::SnapInput via OverrideInput().
+	EDispatch CmdSetInput(const json_value *pArgs, int Id, std::string *pResultJson, CPendingRequest *pPending, CError *pError);
+	EDispatch CmdClearInput(const json_value *pArgs, int Id, std::string *pResultJson, CPendingRequest *pPending, CError *pError);
+
+	// State readback.
+	EDispatch CmdGetState(const json_value *pArgs, int Id, std::string *pResultJson, CPendingRequest *pPending, CError *pError);
+	EDispatch CmdGetParityHistory(const json_value *pArgs, int Id, std::string *pResultJson, CPendingRequest *pPending, CError *pError);
 
 	/** Re-applies cl_automation_fixed_step to the base/time.h virtual clock on every change. */
 	static void ConchainFixedStep(IConsole::IResult *pResult, void *, IConsole::FCommandCallback pfnCallback, void *pCallbackUserData);
@@ -161,6 +214,7 @@ public:
 	void OnFrameEnd() override;
 
 	bool OverrideInput(int Dummy, CAutomationInput *pInput) const override;
+	bool ConsumeInputReset(int Dummy) override;
 	void SetObservedState(const CAutomationCharacter &Predicted, const CAutomationCharacter &Snapshot,
 		const CAutomationInput &LastInput, int LocalClientId) override;
 };

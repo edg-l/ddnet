@@ -97,6 +97,11 @@ private:
 	uint32_t m_InputCounter;
 	std::vector<CTouchFingerState> m_vTouchFingerStates;
 
+#if defined(CONF_AUTOMATION)
+	vec2 m_SyntheticMouseDelta = vec2(0.0f, 0.0f);
+	bool m_HasSyntheticMouseDelta = false;
+#endif
+
 	void HandleJoystickAxisMotionEvent(const SDL_JoyAxisEvent &Event);
 	void HandleJoystickButtonEvent(const SDL_JoyButtonEvent &Event);
 	void HandleJoystickHatMotionEvent(const SDL_JoyHatEvent &Event);
@@ -140,6 +145,12 @@ public:
 	void MouseModeRelative() override;
 	vec2 NativeMousePos() const override;
 	bool NativeMousePressed(int Index) const override;
+
+#if defined(CONF_AUTOMATION)
+	void InjectKeyEvent(int Key, int Flags) override;
+	void InjectTextEvent(const char *pText) override;
+	void InjectMouseRelative(vec2 Delta) override;
+#endif
 
 	const std::vector<CTouchFingerState> &TouchFingerStates() const override;
 	void ClearTouchDeltas() override;

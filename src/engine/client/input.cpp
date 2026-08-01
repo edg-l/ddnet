@@ -72,6 +72,27 @@ void CInput::AddTextEvent(const char *pText)
 	m_vInputEvents.emplace_back(Event);
 }
 
+#if defined(CONF_AUTOMATION)
+void CInput::InjectKeyEvent(int Key, int Flags)
+{
+	AddKeyEvent(Key, Flags);
+}
+
+void CInput::InjectTextEvent(const char *pText)
+{
+	AddTextEvent(pText);
+}
+
+void CInput::InjectMouseRelative(vec2 Delta)
+{
+	// Accumulate rather than assign: several mouse_move requests can arrive in one intake batch,
+	// before MouseRelative drains the delta for the frame. Assigning would silently drop all but
+	// the last of them.
+	m_SyntheticMouseDelta += Delta;
+	m_HasSyntheticMouseDelta = true;
+}
+#endif
+
 CInput::CInput()
 {
 	std::fill(std::begin(m_aCurrentKeyStates), std::end(m_aCurrentKeyStates), false);
@@ -274,6 +295,17 @@ bool CInput::CJoystick::Absolute(float *pX, float *pY)
 
 bool CInput::MouseRelative(float *pX, float *pY)
 {
+#if defined(CONF_AUTOMATION)
+	if(m_HasSyntheticMouseDelta)
+	{
+		*pX = m_SyntheticMouseDelta.x;
+		*pY = m_SyntheticMouseDelta.y;
+		m_SyntheticMouseDelta = vec2(0.0f, 0.0f);
+		m_HasSyntheticMouseDelta = false;
+		return true;
+	}
+#endif
+
 	if(!m_MouseFocus || !m_InputGrabbed)
 		return false;
 

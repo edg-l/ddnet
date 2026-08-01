@@ -91,9 +91,15 @@ public:
 	/** Resolve pending replies and flush them. Called once per frame from CClient::Run. */
 	virtual void OnFrameEnd() = 0;
 
-	// --- filled in phase 3 ---
 	/** True when scripted input is active for Dummy; then pInput has been overwritten. */
 	virtual bool OverrideInput(int Dummy, CAutomationInput *pInput) const = 0;
+	/**
+	 * True exactly once per activating set_input transition for Dummy (inactive -> active), so
+	 * that CControls::SnapInput can reset any physically-held input before applying the first
+	 * scripted tick. Consumes the flag: a second call in a row without an intervening activation
+	 * returns false.
+	 */
+	virtual bool ConsumeInputReset(int Dummy) = 0;
 	/** Per-frame push of the observable game state from the game client. */
 	virtual void SetObservedState(const CAutomationCharacter &Predicted,
 		const CAutomationCharacter &Snapshot, const CAutomationInput &LastInput,

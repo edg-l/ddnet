@@ -7,6 +7,7 @@
 #include <base/time.h>
 #include <base/vmath.h>
 
+#include <engine/automation.h>
 #include <engine/client.h>
 #include <engine/shared/config.h>
 
@@ -186,6 +187,31 @@ void CControls::OnMessage(int Msg, void *pRawMsg)
 
 int CControls::SnapInput(int *pData)
 {
+#if defined(CONF_AUTOMATION)
+	if(GameClient()->m_pAutomation != nullptr)
+	{
+		CAutomationInput ScriptedInput;
+		if(GameClient()->m_pAutomation->OverrideInput(g_Config.m_ClDummy, &ScriptedInput))
+		{
+			const int Dummy = g_Config.m_ClDummy;
+			if(GameClient()->m_pAutomation->ConsumeInputReset(Dummy))
+				ResetInput(Dummy);
+			m_aInputDirectionLeft[Dummy] = ScriptedInput.m_Direction < 0 ? 1 : 0;
+			m_aInputDirectionRight[Dummy] = ScriptedInput.m_Direction > 0 ? 1 : 0;
+			m_aInputData[Dummy].m_Jump = ScriptedInput.m_Jump;
+			m_aInputData[Dummy].m_Hook = ScriptedInput.m_Hook;
+			m_aInputData[Dummy].m_Fire = ScriptedInput.m_Fire;
+			m_aInputData[Dummy].m_WantedWeapon = ScriptedInput.m_WantedWeapon;
+			m_aInputData[Dummy].m_NextWeapon = ScriptedInput.m_NextWeapon;
+			m_aInputData[Dummy].m_PrevWeapon = ScriptedInput.m_PrevWeapon;
+			m_aMousePos[Dummy] = vec2(ScriptedInput.m_TargetX, ScriptedInput.m_TargetY);
+			// Scripted aim goes through the same clamp as a real mouse, so it cannot express an
+			// aim vector the input path could never produce.
+			ClampMousePos();
+		}
+	}
+#endif
+
 	// update player state
 	if(GameClient()->m_Chat.IsActive())
 		m_aInputData[g_Config.m_ClDummy].m_PlayerFlags = PLAYERFLAG_CHATTING;
