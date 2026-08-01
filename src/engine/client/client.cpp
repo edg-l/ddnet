@@ -25,6 +25,7 @@
 #include <base/time.h>
 #include <base/windows.h>
 
+#include <engine/automation.h>
 #include <engine/config.h>
 #include <engine/console.h>
 #include <engine/discord.h>
@@ -3101,6 +3102,9 @@ void CClient::InitInterfaces()
 	m_pUpdater = Kernel()->RequestInterface<IUpdater>();
 #endif
 	m_pDiscord = Kernel()->RequestInterface<IDiscord>();
+#if defined(CONF_AUTOMATION)
+	m_pAutomation = Kernel()->RequestInterface<IAutomation>();
+#endif
 	m_pSteam = Kernel()->RequestInterface<ISteam>();
 	m_pNotifications = Kernel()->RequestInterface<INotifications>();
 	m_pStorage = Kernel()->RequestInterface<IStorage>();
@@ -3231,6 +3235,9 @@ void CClient::Run()
 	GameClient()->OnInit();
 
 	m_Fifo.Init(m_pConsole, g_Config.m_ClInputFifo, CFGFLAG_CLIENT);
+#if defined(CONF_AUTOMATION)
+	Automation()->Init();
+#endif
 
 	m_pConsole->Print(IConsole::OUTPUT_LEVEL_STANDARD, "client", "version " GAME_RELEASE_VERSION " on " CONF_PLATFORM_STRING " " CONF_ARCH_STRING, ColorRGBA(0.7f, 0.7f, 1.0f, 1.0f));
 	if(GIT_SHORTREV_HASH)
@@ -3323,6 +3330,10 @@ void CClient::Run()
 			else if(str_endswith(aFile, ".map"))
 				HandleMapPath(aFile);
 		}
+
+#if defined(CONF_AUTOMATION)
+		Automation()->OnFrameBegin();
+#endif
 
 #if defined(CONF_AUTOUPDATE)
 		Updater()->Update();
@@ -3426,6 +3437,10 @@ void CClient::Run()
 
 		m_Fifo.Update();
 
+#if defined(CONF_AUTOMATION)
+		Automation()->OnFrameEnd();
+#endif
+
 		if(State() == IClient::STATE_QUITTING || State() == IClient::STATE_RESTARTING)
 			break;
 
@@ -3489,6 +3504,9 @@ void CClient::Run()
 	}
 
 	m_Fifo.Shutdown();
+#if defined(CONF_AUTOMATION)
+	Automation()->Shutdown();
+#endif
 	m_pHttp->Shutdown();
 	Engine()->ShutdownJobs();
 
@@ -5042,6 +5060,11 @@ int main(int argc, const char **argv)
 
 	IDiscord *pDiscord = CreateDiscord();
 	pKernel->RegisterInterface(pDiscord);
+
+#if defined(CONF_AUTOMATION)
+	IAutomation *pAutomation = CreateAutomation();
+	pKernel->RegisterInterface(pAutomation);
+#endif
 
 	ISteam *pSteam = CreateSteam();
 	pKernel->RegisterInterface(pSteam);

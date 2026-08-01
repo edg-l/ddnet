@@ -36,6 +36,9 @@ class CMsgPacker;
 class CUnpacker;
 class IConfigManager;
 class IDiscord;
+#if defined(CONF_AUTOMATION)
+class IAutomation;
+#endif
 class IEngine;
 class IEngineInput;
 class IEngineSound;
@@ -63,6 +66,9 @@ class CClient : public IClient, public CDemoPlayer::IListener
 	CConfig *m_pConfig = nullptr;
 	IConsole *m_pConsole = nullptr;
 	IDiscord *m_pDiscord = nullptr;
+#if defined(CONF_AUTOMATION)
+	IAutomation *m_pAutomation = nullptr;
+#endif
 	IEditor *m_pEditor = nullptr;
 	IEngine *m_pEngine = nullptr;
 	IFavorites *m_pFavorites = nullptr;
@@ -279,6 +285,9 @@ public:
 	IConfigManager *ConfigManager() { return m_pConfigManager; }
 	CConfig *Config() { return m_pConfig; }
 	IDiscord *Discord() { return m_pDiscord; }
+#if defined(CONF_AUTOMATION)
+	IAutomation *Automation() { return m_pAutomation; }
+#endif
 	IEngine *Engine() { return m_pEngine; }
 	IGameClient *GameClient() { return m_pGameClient; }
 	const IGameClient *GameClient() const { return m_pGameClient; }

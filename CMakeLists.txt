@@ -104,6 +104,7 @@ option(VIDEORECORDER "Enable video recording support via FFmpeg" ON)
 option(UPNP "Enable UPnP support" OFF)
 option(ANTIBOT "Enable support for a dynamic anticheat library (not provided, see src/antibot for interface if you want to implement your own)" OFF)
 option(HEADLESS_CLIENT "Build the client without graphics" OFF)
+option(AUTOMATION "Enable the client automation/test-control API" OFF)
 option(CLIENT "Compile client" ON)
 option(SERVER "Compile server" ON)
 option(TOOLS "Compile tools" ON)
@@ -2158,6 +2159,7 @@ set_src(BASE GLOB_RECURSE src/base
 set_src(ENGINE_INTERFACE GLOB src/engine
   # tidy-alphabetical-start
   antibot.h
+  automation.h
   client.h
   config.h
   console.h
@@ -2417,6 +2419,8 @@ if(CLIENT)
 
   set_src(ENGINE_CLIENT GLOB_RECURSE src/engine/client
     # tidy-alphabetical-start
+    automation.cpp
+    automation.h
     backend/backend_base.cpp
     backend/backend_base.h
     backend/glsl_shader_compiler.cpp
@@ -4030,6 +4034,9 @@ foreach(target ${TARGETS_OWN})
   endif()
   if(HEADLESS_CLIENT)
     target_compile_definitions(${target} PRIVATE CONF_HEADLESS_CLIENT)
+  endif()
+  if(AUTOMATION)
+    target_compile_definitions(${target} PRIVATE CONF_AUTOMATION)
   endif()
   if(MYSQL)
     target_compile_definitions(${target} PRIVATE CONF_MYSQL)
