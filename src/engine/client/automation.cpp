@@ -188,8 +188,12 @@ void CAutomationConnection::FlushBlocking(std::chrono::nanoseconds Timeout)
 	{
 		return;
 	}
-	const int64_t Deadline = time_get_nanoseconds().count() + Timeout.count();
-	while(m_ClientConnected && !m_SendBuffer.empty() && time_get_nanoseconds().count() < Deadline)
+	// Real clock, not time_get_nanoseconds(): this deadline is the only guaranteed exit when
+	// the peer stops reading, and it runs after CClient::Run's loop (and with it, the only
+	// caller of time_advance_fixed_step) has already exited, so a virtual clock would never
+	// advance here and the loop would spin forever.
+	const int64_t Deadline = time_get_real_nanoseconds().count() + Timeout.count();
+	while(m_ClientConnected && !m_SendBuffer.empty() && time_get_real_nanoseconds().count() < Deadline)
 	{
 		Flush();
 	}
@@ -330,6 +334,9 @@ void CAutomation::Init()
 	m_pGameClient = Kernel()->RequestInterface<IGameClient>();
 	m_pInput = Kernel()->RequestInterface<IEngineInput>();
 
+	time_set_fixed_step((int64_t)g_Config.m_ClAutomationFixedStep * 1000);
+	m_pConsole->Chain("cl_automation_fixed_step", ConchainFixedStep, this);
+
 	if(!m_Connection.Open(Port))
 	{
 		log_error("automation", "failed to open automation socket on 127.0.0.1:%d", Port);
@@ -340,6 +347,10 @@ void CAutomation::Init()
 
 void CAutomation::Shutdown()
 {
+	// Restore the real clock first. Everything that runs after this point is teardown, past the
+	// only caller of time_advance_fixed_step, so a virtual clock would be frozen for the rest of
+	// the process and any elapsed-time logic in teardown would never make progress.
+	time_set_fixed_step(0);
 	m_Connection.FlushBlocking(std::chrono::milliseconds(200));
 	m_Connection.Close();
 }
@@ -347,6 +358,15 @@ void CAutomation::Shutdown()
 bool CAutomation::Enabled() const
 {
 	return m_Connection.IsOpen();
+}
+
+void CAutomation::ConchainFixedStep(IConsole::IResult *pResult, void *, IConsole::FCommandCallback pfnCallback, void *pCallbackUserData)
+{
+	pfnCallback(pResult, pCallbackUserData);
+	if(pResult->NumArguments() == 1)
+	{
+		time_set_fixed_step((int64_t)g_Config.m_ClAutomationFixedStep * 1000);
+	}
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -736,6 +756,8 @@ EDispatch CAutomation::CmdGetStatus(const json_value *, int, std::string *pResul
 	Writer.WriteBoolValue(g_Config.m_ClEditor != 0);
 	Writer.WriteAttribute("connection_problems");
 	Writer.WriteBoolValue(m_pClient->ConnectionProblems());
+	Writer.WriteAttribute("fixed_step_us");
+	Writer.WriteIntValue(g_Config.m_ClAutomationFixedStep);
 	Writer.EndObject();
 	*pResultJson = CompactJson(Writer.GetOutputString());
 	return EDispatch::REPLY_NOW;

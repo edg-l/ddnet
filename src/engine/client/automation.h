@@ -7,13 +7,13 @@
 
 #include <engine/automation.h>
 #include <engine/client.h>
+#include <engine/console.h>
 #include <engine/shared/json.h>
 
 #include <chrono>
 #include <string>
 #include <vector>
 
-class IConsole;
 class IEngineInput;
 
 /**
@@ -148,6 +148,9 @@ class CAutomation : public IAutomation
 	 * SetObservedState() and gives it something to check.
 	 */
 	EDispatch CmdWaitFor(const json_value *pArgs, int Id, std::string *pResultJson, CPendingRequest *pPending, CError *pError);
+
+	/** Re-applies cl_automation_fixed_step to the base/time.h virtual clock on every change. */
+	static void ConchainFixedStep(IConsole::IResult *pResult, void *, IConsole::FCommandCallback pfnCallback, void *pCallbackUserData);
 
 public:
 	void Init() override;

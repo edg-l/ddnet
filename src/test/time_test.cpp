@@ -28,6 +28,45 @@ TEST(Time, Nanoseconds)
 	EXPECT_LT(Time1, Time2);
 }
 
+#if defined(CONF_AUTOMATION)
+TEST(Time, FixedStep)
+{
+	time_set_fixed_step(20000 * 1000); // 20000us fixed step, matching cl_automation_fixed_step's unit
+
+	const int64_t Fixed = time_get();
+	EXPECT_EQ(time_get(), Fixed);
+	set_new_tick();
+	EXPECT_EQ(time_get(), Fixed);
+
+	time_advance_fixed_step();
+	EXPECT_EQ(time_get(), Fixed + 20000 * 1000);
+
+	// time_get_impl and time_get_real_nanoseconds are never virtualized, so they keep moving
+	// independently of the frozen virtual clock.
+	const int64_t Uncached1 = time_get_impl();
+	const std::chrono::nanoseconds Real1 = time_get_real_nanoseconds();
+	std::this_thread::sleep_for(std::chrono::milliseconds(1));
+	const int64_t Uncached2 = time_get_impl();
+	const std::chrono::nanoseconds Real2 = time_get_real_nanoseconds();
+	EXPECT_LT(Uncached1, Uncached2);
+	EXPECT_LT(Real1, Real2);
+	EXPECT_EQ(time_get(), Fixed + 20000 * 1000);
+
+	time_set_fixed_step(0);
+	const int64_t RealTick1 = time_get();
+	set_new_tick();
+	std::this_thread::sleep_for(std::chrono::milliseconds(1));
+	const int64_t RealTick2 = time_get();
+	EXPECT_LT(RealTick1, RealTick2);
+
+	// time_get caches its sample until the next set_new_tick, and the calls above have consumed
+	// the flag. Leaving it consumed would freeze time_get at RealTick2 for every later test in
+	// this binary. There is no API to restore the pristine "never cache" state, so leave the flag
+	// set, which guarantees the next caller recomputes.
+	set_new_tick();
+}
+#endif
+
 TEST(Time, StrTime)
 {
 	char aBuf[32] = "foobar";

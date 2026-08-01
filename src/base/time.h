@@ -43,6 +43,35 @@ void set_new_tick();
 std::chrono::nanoseconds time_get_nanoseconds();
 
 /**
+ * Returns an uncached sample of the real high resolution timer in nanoseconds.
+ *
+ * @ingroup Time
+ *
+ * @remark Unlike @link time_get_nanoseconds @endlink this always reflects wall clock
+ *         progress and is never affected by @link time_set_fixed_step @endlink. Use it for
+ *         frame pacing and profiling.
+ */
+std::chrono::nanoseconds time_get_real_nanoseconds();
+
+#if defined(CONF_AUTOMATION)
+/**
+ * Switches the clock reported by time_get and time_get_nanoseconds to a virtual clock that
+ * only advances when time_advance_fixed_step is called.
+ *
+ * @ingroup Time
+ *
+ * @param step_nanoseconds Amount the virtual clock advances per step, 0 restores the real clock.
+ *
+ * @remark The virtual clock starts at the current real value, so enabling it introduces no
+ *         discontinuity. time_get_impl and time_get_real_nanoseconds are unaffected.
+ */
+void time_set_fixed_step(int64_t step_nanoseconds);
+
+/** Advances the virtual clock by one step. No effect when the fixed step is 0. */
+void time_advance_fixed_step();
+#endif
+
+/**
  * Fetches a sample from a high resolution timer.
  *
  * @ingroup Time
@@ -65,6 +94,10 @@ int64_t time_get_impl();
  * @remark To know how fast the timer is ticking, see @link time_freq @endlink.
  * @remark The value is cached for each tick, see @link set_new_tick @endlink.
  *         Uses @link time_get_impl @endlink to fetch the uncached sample.
+ * @remark While a fixed step is configured with @link time_set_fixed_step @endlink this returns
+ *         the virtual clock directly and neither caches nor calls @link time_get_impl @endlink,
+ *         because the virtual clock only moves on @link time_advance_fixed_step @endlink and is
+ *         therefore already stable within a tick.
  *
  * @see time_freq time_get_impl
  */

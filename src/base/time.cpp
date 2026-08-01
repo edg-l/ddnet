@@ -7,6 +7,7 @@
 #include "detect.h"
 #include "str.h"
 
+#include <atomic>
 #include <cmath>
 #include <iomanip> // std::get_time
 #include <sstream> // std::istringstream
@@ -22,18 +23,58 @@ static_assert(std::chrono::steady_clock::is_steady, "Compiler does not support s
 static_assert(std::chrono::steady_clock::period::den / std::chrono::steady_clock::period::num >= 1000000000, "Compiler has a bad timer precision and might be out of date.");
 static const std::chrono::time_point<std::chrono::steady_clock> GLOBAL_START_TIME = std::chrono::steady_clock::now();
 
-std::chrono::nanoseconds time_get_nanoseconds()
+static std::chrono::nanoseconds time_get_real_nanoseconds_impl()
 {
 	return std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - GLOBAL_START_TIME);
 }
 
+std::chrono::nanoseconds time_get_real_nanoseconds()
+{
+	return time_get_real_nanoseconds_impl();
+}
+
+#if defined(CONF_AUTOMATION)
+static std::atomic<int64_t> fixed_step{0};
+static std::atomic<int64_t> virtual_now{0};
+
+void time_set_fixed_step(int64_t step_nanoseconds)
+{
+	if(step_nanoseconds != 0 && fixed_step.load(std::memory_order_relaxed) == 0)
+		virtual_now.store(time_get_real_nanoseconds_impl().count(), std::memory_order_relaxed);
+	// Release, paired with the acquire loads in time_get and time_get_nanoseconds: the seeding
+	// store above must be visible to any thread that observes a nonzero step, or a reader on
+	// another thread could take the virtual branch and see an unseeded virtual_now.
+	fixed_step.store(step_nanoseconds, std::memory_order_release);
+}
+
+void time_advance_fixed_step()
+{
+	const int64_t Step = fixed_step.load(std::memory_order_relaxed);
+	if(Step != 0)
+		virtual_now.fetch_add(Step, std::memory_order_relaxed);
+}
+#endif
+
+std::chrono::nanoseconds time_get_nanoseconds()
+{
+#if defined(CONF_AUTOMATION)
+	if(fixed_step.load(std::memory_order_acquire) != 0)
+		return std::chrono::nanoseconds(virtual_now.load(std::memory_order_relaxed));
+#endif
+	return time_get_real_nanoseconds_impl();
+}
+
 int64_t time_get_impl()
 {
-	return time_get_nanoseconds().count();
+	return time_get_real_nanoseconds_impl().count();
 }
 
 int64_t time_get()
 {
+#if defined(CONF_AUTOMATION)
+	if(fixed_step.load(std::memory_order_acquire) != 0)
+		return virtual_now.load(std::memory_order_relaxed);
+#endif
 	static int64_t last = 0;
 	if(new_tick == 0)
 		return last;

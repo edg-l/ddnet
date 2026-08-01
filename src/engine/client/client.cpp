@@ -3276,12 +3276,16 @@ void CClient::Run()
 	bool LastE = false;
 	bool LastG = false;
 
-	auto LastTime = time_get_nanoseconds();
+	// Real clock: frame pacing is a wall-clock concern, unaffected by cl_automation_fixed_step.
+	auto LastTime = time_get_real_nanoseconds();
 	int64_t LastRenderTime = time_get();
 
 	while(true)
 	{
 		set_new_tick();
+#if defined(CONF_AUTOMATION)
+		time_advance_fixed_step();
+#endif
 
 		// handle pending connects
 		if(m_aCmdConnect[0])
@@ -3445,7 +3449,9 @@ void CClient::Run()
 			break;
 
 		// beNice
-		auto Now = time_get_nanoseconds();
+		// Real clock: this loop terminates purely on an elapsed-time delta, which would never
+		// advance under a frozen virtual clock and would spin forever.
+		auto Now = time_get_real_nanoseconds();
 		decltype(Now) SleepTimeInNanoSeconds{0};
 		bool Slept = false;
 		if(g_Config.m_ClRefreshRateInactive && !m_pGraphics->WindowActive())
@@ -3462,7 +3468,7 @@ void CClient::Run()
 			while(std::chrono::duration_cast<std::chrono::microseconds>(SleepTimeInNanoSecondsInner) > 0us)
 			{
 				net_socket_read_wait(m_aNetClient[CONN_MAIN].m_Socket, SleepTimeInNanoSecondsInner);
-				auto NowInnerCalc = time_get_nanoseconds();
+				auto NowInnerCalc = time_get_real_nanoseconds();
 				SleepTimeInNanoSecondsInner -= (NowInnerCalc - NowInner);
 				NowInner = NowInnerCalc;
 			}

@@ -740,6 +740,7 @@ MACRO_CONFIG_STR(ClInputFifo, cl_input_fifo, 128, "", CFGFLAG_SAVE | CFGFLAG_CLI
 MACRO_CONFIG_INT(ClConfigVersion, cl_config_version, 0, 0, 0, CFGFLAG_CLIENT | CFGFLAG_SAVE, "The config version. Helps newer clients fix bugs with older configs.")
 #if defined(CONF_AUTOMATION)
 MACRO_CONFIG_INT(ClAutomationPort, cl_automation_port, 0, 0, 65535, CFGFLAG_CLIENT, "Port for the automation API on 127.0.0.1 (0 = disabled)")
+MACRO_CONFIG_INT(ClAutomationFixedStep, cl_automation_fixed_step, 0, 0, 1000000, CFGFLAG_CLIENT, "Fixed frame timestep in microseconds for deterministic timing (0 = real clock)")
 #endif
 
 // demo editor
