@@ -3,6 +3,7 @@ import json
 import socket
 
 AUTOMATION_PROTOCOL_VERSION = 1
+HOOK_GRABBED = 5
 CORE_KEYS = ("x", "y", "vel_x", "vel_y", "angle", "direction", "jumped", "hooked_player", "hook_state", "hook_tick", "hook_x", "hook_y", "hook_dx", "hook_dy")
 
 
@@ -77,6 +78,54 @@ class AutomationClient:
 
 	def get_parity_history(self, max_entries=400):
 		return self.request("get_parity_history", max=max_entries)
+
+	# Convenience layer. Everything below is built from the commands above; it exists because
+	# tests otherwise spend most of their lines on the same four shapes.
+
+	def snapshot(self):
+		"""The authoritative character core the server last sent."""
+		return self.get_state()["snapshot"]
+
+	def predicted(self):
+		"""The client's predicted character core, or None while prediction is not valid."""
+		return self.get_state()["predicted"]
+
+	def connect(self, server_port, host="127.0.0.1", settle_ticks=25, timeout_frames=12000):
+		"""Connect, wait for a local character, and let prediction settle.
+
+		Also drains the parity history, since the ticks around a connect are not comparable.
+		"""
+		self.console(f"connect {host}:{server_port}")
+		self.wait_for("state", value="online", timeout_frames=timeout_frames)
+		self.wait_for("has_local_character", timeout_frames=timeout_frames)
+		if settle_ticks:
+			self.wait_ticks(settle_ticks)
+		self.get_parity_history()
+
+	def hold(self, ticks, **inputs):
+		"""Apply an input, hold it for a number of ticks, and return the resulting snapshot."""
+		self.set_input(**inputs)
+		self.wait_ticks(ticks)
+		return self.snapshot()
+
+	def sample(self, ticks, every=1):
+		"""Return one snapshot every `every` ticks, over `ticks` ticks.
+
+		For observing a transient, such as the apex of a jump or a hook that latches and lets go
+		again, where only the endpoints would miss it.
+		"""
+		samples = []
+		for _ in range(max(1, ticks // every)):
+			self.wait_ticks(every)
+			samples.append(self.snapshot())
+		return samples
+
+	def parity_mismatches(self, max_entries=400):
+		"""Drain the parity history and return [(tick, {field: (predicted, snapshot)})] for
+		every tick where the two disagree. Empty means the client predicted the server exactly.
+		"""
+		entries = self.get_parity_history(max_entries)["entries"]
+		return [(entry["tick"], core_mismatches(entry)) for entry in entries if core_mismatches(entry)]
 
 
 def core_mismatches(entry):

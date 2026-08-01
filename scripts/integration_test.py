@@ -17,7 +17,7 @@ import sys
 import tempfile
 import traceback
 
-from automation import AutomationClient, core_mismatches, free_tcp_port
+from automation import HOOK_GRABBED, AutomationClient, core_mismatches, free_tcp_port
 
 
 def urlopen_anystatus(url):
@@ -894,19 +894,13 @@ def automation_prediction_parity(test_env):
 	wait_for_startup([server])
 	auto = client.automation(port)
 
-	auto.console(f"connect 127.0.0.1:{server.port}")
-	auto.wait_for("state", value="online", timeout_frames=12000)
-	auto.wait_for("has_local_character", timeout_frames=6000)
-
-	# Let the prediction converge before asserting on it.
-	auto.wait_ticks(25)
-	auto.get_parity_history()
+	auto.connect(server.port)
 
 	status = auto.get_status()
 	if status["menus_active"]:
 		raise AssertionError("menu is open, scripted gameplay input would be discarded")
 
-	start_x = auto.get_state()["snapshot"]["x"]
+	start_x = auto.snapshot()["x"]
 	auto.set_input(dir=1, jump=1, target_x=200, target_y=0)
 	auto.wait_ticks(60)
 	history = auto.get_parity_history()
@@ -921,13 +915,68 @@ def automation_prediction_parity(test_env):
 		details = "\n".join(f"  tick {tick}: {diff}" for tick, diff in mismatches[:10])
 		raise AssertionError(f"client prediction disagrees with the server on {len(mismatches)} of {len(entries)} ticks:\n{details}")
 
-	end_x = auto.get_state()["snapshot"]["x"]
+	end_x = auto.snapshot()["x"]
 	# coverage.map's spawn sits right against the door from local/door-prediction-bug.md; walking
 	# right from there covers 65 units before the next solid tile of the coverage course, measured
 	# by running 450 ticks of dir=1 without ever passing x=209. The threshold stays well under that
 	# so the check still fails for a tee that does not move, without depending on a golden position.
 	if end_x - start_x < 50:
 		raise AssertionError(f"tee did not move right under scripted input: {start_x} -> {end_x}")
+
+	auto.console("quit")
+	auto.close()
+	client.wait_for_exit()
+	server.exit()
+	server.wait_for_exit()
+
+
+@test(requires_automation=True, timeout=180)
+def automation_movement(test_env):
+	port = free_tcp_port()
+	client = test_env.client(
+		[
+			"cl_skip_start_menu 1",
+			"cl_save_settings 0",
+			"cl_auto_demo_record 0",
+			'cl_menu_map ""',
+			"snd_enable 0",
+		],
+		automation_port=port,
+	)
+	# Tutorial rather than coverage: coverage's spawn is boxed in, leaving 65 units of run, 3
+	# units of headroom and nothing in hook range. The thresholds below are fractions of what
+	# Tutorial's open spawn area actually produces, measured over 30-tick windows.
+	server = test_env.server(["sv_map Tutorial"])
+	wait_for_startup([server])
+	auto = client.automation(port)
+	auto.connect(server.port)
+
+	# Walking right. Measured 240 units over 30 ticks.
+	start_x = auto.snapshot()["x"]
+	moved_x = auto.hold(30, dir=1, target_x=200, target_y=0)["x"]
+	if moved_x - start_x < 100:
+		raise AssertionError(f"tee did not walk right: {start_x} -> {moved_x}")
+
+	# Jumping. y grows downward, so a jump lowers it. Measured a 173 unit rise. m_Jumped carries
+	# the bits the character sets on takeoff, so it stays set for the whole airborne window.
+	ground_y = auto.snapshot()["y"]
+	auto.set_input(dir=0, jump=1, target_x=200, target_y=0)
+	airborne = auto.sample(ticks=24, every=2)
+	auto.set_input(jump=0)
+	peak_y = min(state["y"] for state in airborne)
+	if ground_y - peak_y < 40:
+		raise AssertionError(f"tee did not leave the ground: y {ground_y} -> peak {peak_y}")
+	if not any(state["jumped"] for state in airborne):
+		raise AssertionError("character never reported a jump")
+
+	# Hooking straight down into the floor the tee is standing on. Aiming at open air only
+	# reaches HOOK_FLYING and never latches, which is map geometry rather than a hook failure.
+	auto.wait_ticks(30)
+	auto.set_input(dir=0, jump=0, hook=1, target_x=0, target_y=300)
+	hook_states = [state["hook_state"] for state in auto.sample(ticks=15)]
+	auto.clear_input()
+	if HOOK_GRABBED not in hook_states:
+		raise AssertionError(f"hook never attached, saw states {sorted(set(hook_states))}")
 
 	auto.console("quit")
 	auto.close()
