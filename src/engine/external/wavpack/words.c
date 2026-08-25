@@ -553,7 +553,7 @@ int restore_weight (signed char weight)
 {
     int result;
 
-    if ((result = (int) weight << 3) > 0)
+    if ((result = (int) ((uint32_t) weight << 3)) > 0)
         result += (result + 64) >> 7;
 
     return result;

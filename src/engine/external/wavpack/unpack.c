@@ -724,24 +724,24 @@ static void fixup_samples (WavpackStream *wps, int32_t *buffer, uint32_t sample_
 
         switch (flags & BYTES_STORED) {
             case 0:
-                min_shifted = (min_value = -128 >> shift) << shift;
-                max_shifted = (max_value = 127 >> shift) << shift;
+                min_shifted = (int32_t) ((uint32_t) (min_value = -128 >> shift) << shift);
+                max_shifted = (int32_t) ((uint32_t) (max_value = 127 >> shift) << shift);
                 break;
 
             case 1:
-                min_shifted = (min_value = -32768 >> shift) << shift;
-                max_shifted = (max_value = 32767 >> shift) << shift;
+                min_shifted = (int32_t) ((uint32_t) (min_value = -32768 >> shift) << shift);
+                max_shifted = (int32_t) ((uint32_t) (max_value = 32767 >> shift) << shift);
                 break;
 
             case 2:
-                min_shifted = (min_value = -8388608 >> shift) << shift;
-                max_shifted = (max_value = 8388607 >> shift) << shift;
+                min_shifted = (int32_t) ((uint32_t) (min_value = -8388608 >> shift) << shift);
+                max_shifted = (int32_t) ((uint32_t) (max_value = 8388607 >> shift) << shift);
                 break;
 
             case 3:
             default:
-                min_shifted = (min_value = (int32_t) 0x80000000 >> shift) << shift;
-                max_shifted = (max_value = (int32_t) 0x7FFFFFFF >> shift) << shift;
+                min_shifted = (int32_t) ((uint32_t) (min_value = (int32_t) 0x80000000 >> shift) << shift);
+                max_shifted = (int32_t) ((uint32_t) (max_value = (int32_t) 0x7FFFFFFF >> shift) << shift);
                 break;
         }
 
@@ -753,8 +753,10 @@ static void fixup_samples (WavpackStream *wps, int32_t *buffer, uint32_t sample_
                 *buffer++ = min_shifted;
             else if (*buffer > max_value)
                 *buffer++ = max_shifted;
-            else
-                *buffer++ <<= shift;
+            else {
+                *buffer = (int32_t) ((uint32_t) *buffer << shift);
+                buffer++;
+            }
         }
     }
     else if (shift) {
