@@ -595,7 +595,6 @@ endif()
 if(NOT(TARGET_OS STREQUAL "android" OR TARGET_OS STREQUAL "ios"))
   find_package(GLEW)
 endif()
-find_package(EGL QUIET)
 find_package(GTest)
 if(UPNP)
   find_package(Miniupnpc)
@@ -900,9 +899,6 @@ else()
   else()
     set(PLATFORM_LIBS)
   endif()
-endif()
-if(TOOLS)
-  show_dependency_status("EGL" EGL) # egl also checks for OpenGL::EGL
 endif()
 
 ########################################################################
@@ -2573,8 +2569,8 @@ if(CLIENT)
     backend/opengles/opengles_sl_program.cpp
     backend/vulkan/backend_vulkan.cpp
     backend/vulkan/backend_vulkan.h
-    backend_egl.cpp
-    backend_egl.h
+    backend_headless.cpp
+    backend_headless.h
     backend_sdl.cpp
     backend_sdl.h
     backend_threaded.cpp
