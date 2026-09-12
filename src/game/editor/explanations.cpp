@@ -517,6 +517,14 @@ const char *CExplanations::ExplainDDNet(int Tile, int Layer)
 		if(Layer == LAYER_GAME || Layer == LAYER_FRONT || Layer == LAYER_SWITCH)
 			return "DOOR: Combined with LASER LENGTH creates doors. Doesn't allow to go through it (only with NINJA).";
 		break;
+	case ENTITY_OFFSET + ENTITY_MAP_DUMMY:
+		if(Layer == LAYER_GAME || Layer == LAYER_FRONT)
+			return "MAP DUMMY: A tee with no player. It stands still until hooked, pushed or hit, and respawns here when it dies. Every team gets its own copy, put back here when the team starts; players without a team share one copy. Flip horizontally to make it face left. Ignored in the front layer on top of a solid tile.";
+		break;
+	case ENTITY_OFFSET + ENTITY_MAP_DUMMY_HAMMER:
+		if(Layer == LAYER_GAME || Layer == LAYER_FRONT)
+			return "HAMMER MAP DUMMY: A deep-frozen MAP DUMMY holding a hammer. Hammering it pushes it and hits you back as if it had hammered you. Flip horizontally to make it face left.";
+		break;
 	case TILE_TELE_GUN_ENABLE:
 		if(Layer == LAYER_GAME || Layer == LAYER_FRONT)
 			return "TELEGUN: Turn gun on as telegun weapon.";

@@ -110,7 +110,7 @@ bool IsValidSwitchTile(int Index)
 		Index == TILE_SUBTRACT_TIME ||
 		Index == TILE_ALLOW_TELE_GUN ||
 		Index == TILE_ALLOW_BLUE_TELE_GUN ||
-		(IsValidEntity(Index) && Index >= ENTITY_OFFSET + ENTITY_ARMOR_1));
+		(IsValidEntity(Index) && Index >= ENTITY_OFFSET + ENTITY_ARMOR_1 && Index < ENTITY_OFFSET + ENTITY_MAP_DUMMY));
 }
 
 bool IsSwitchTileFlagsUsed(int Index)
@@ -147,7 +147,8 @@ bool IsValidEntity(int Index)
 		(Index >= ENTITY_SPAWN && Index <= ENTITY_LASER_O_FAST) ||
 		(Index >= ENTITY_PLASMAE && Index <= ENTITY_ARMOR_LASER) ||
 		(Index >= ENTITY_DRAGGER_WEAK && Index <= ENTITY_DRAGGER_STRONG_NW) ||
-		Index == ENTITY_DOOR);
+		Index == ENTITY_DOOR ||
+		(Index >= ENTITY_MAP_DUMMY && Index <= ENTITY_MAP_DUMMY_HAMMER));
 }
 
 bool IsRotatableTile(int Index)
@@ -163,7 +164,8 @@ bool IsRotatableTile(int Index)
 		Index - ENTITY_OFFSET == ENTITY_CRAZY_SHOTGUN_EX ||
 		Index - ENTITY_OFFSET == ENTITY_CRAZY_SHOTGUN ||
 		(Index - ENTITY_OFFSET >= ENTITY_ARMOR_1 && Index - ENTITY_OFFSET <= ENTITY_WEAPON_LASER) ||
-		(Index - ENTITY_OFFSET >= ENTITY_ARMOR_SHOTGUN && Index - ENTITY_OFFSET <= ENTITY_ARMOR_LASER));
+		(Index - ENTITY_OFFSET >= ENTITY_ARMOR_SHOTGUN && Index - ENTITY_OFFSET <= ENTITY_ARMOR_LASER) ||
+		(Index - ENTITY_OFFSET >= ENTITY_MAP_DUMMY && Index - ENTITY_OFFSET <= ENTITY_MAP_DUMMY_HAMMER));
 }
 
 bool IsCreditsTile(int TileIndex)

@@ -112,6 +112,10 @@ enum
 
 	// Doors
 	ENTITY_DOOR = 49,
+
+	// Map dummies
+	ENTITY_MAP_DUMMY = 50,
+	ENTITY_MAP_DUMMY_HAMMER = 51,
 	// End Of Lower Tiles
 
 	ENTITY_OFFSET = 255 - 16 * 4,

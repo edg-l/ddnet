@@ -3311,6 +3311,7 @@ if(TOOLS)
     dummy_map.cpp
     map_convert_07.cpp
     map_diff.cpp
+    map_dummies_map.cpp
     map_extract.cpp
     map_find_env.cpp
     map_optimize.cpp
