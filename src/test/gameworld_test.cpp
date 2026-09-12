@@ -1,6 +1,7 @@
 #include "test.h"
 
 #include <base/logger.h>
+#include <base/mem.h>
 #include <base/types.h>
 
 #include <engine/engine.h>
@@ -16,6 +17,7 @@
 
 #include <generated/protocol.h>
 
+#include <game/gamecore.h>
 #include <game/server/entities/character.h>
 #include <game/server/gamecontext.h>
 #include <game/server/gamecontroller.h>
@@ -27,6 +29,7 @@
 
 #include <limits>
 #include <memory>
+#include <random>
 #include <thread>
 
 bool IsInterrupted()
@@ -317,4 +320,38 @@ TEST(Tunings, OutOfRangeBecomesIntMin)
 	EXPECT_EQ((float)(Param = -555555555555555.0f), IntMin);
 	EXPECT_EQ((float)(Param = std::numeric_limits<float>::quiet_NaN()), IntMin);
 	EXPECT_EQ((float)(Param = 0.5f), 0.5f);
+}
+
+// Reference hammer hit expression that HammerHitForce must reproduce bit for bit.
+static vec2 OriginalHammerHitForce(vec2 HammerPos, vec2 TargetPos, vec2 TargetVel, int TargetMoveRestrictions)
+{
+	vec2 Dir;
+	if(length(TargetPos - HammerPos) > 0.0f)
+		Dir = normalize(TargetPos - HammerPos);
+	else
+		Dir = vec2(0.f, -1.f);
+
+	vec2 Temp = TargetVel + normalize(Dir + vec2(0.f, -1.1f)) * 10.0f;
+	Temp = ClampVel(TargetMoveRestrictions, Temp);
+	Temp -= TargetVel;
+	return vec2(0.f, -1.0f) + Temp;
+}
+
+TEST(HammerHitForce, MatchesInline)
+{
+	std::mt19937 Rng(0);
+	std::uniform_real_distribution<float> PosDist(-50000.0f, 50000.0f);
+	std::uniform_real_distribution<float> VelDist(-6000.0f, 6000.0f);
+
+	for(int i = 0; i < 100000; i++)
+	{
+		const vec2 HammerPos(PosDist(Rng), PosDist(Rng));
+		const vec2 TargetPos = (i % 100 == 0) ? HammerPos : vec2(PosDist(Rng), PosDist(Rng));
+		const vec2 TargetVel(VelDist(Rng), VelDist(Rng));
+		const int TargetMoveRestrictions = i % 16;
+
+		const vec2 Actual = HammerHitForce(HammerPos, TargetPos, TargetVel, TargetMoveRestrictions);
+		const vec2 Expected = OriginalHammerHitForce(HammerPos, TargetPos, TargetVel, TargetMoveRestrictions);
+		ASSERT_EQ(mem_comp(&Actual, &Expected, sizeof(vec2)), 0) << "sample " << i;
+	}
 }

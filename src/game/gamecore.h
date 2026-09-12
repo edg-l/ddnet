@@ -11,6 +11,7 @@
 
 #include <generated/protocol.h>
 
+#include <game/collision.h>
 #include <game/teamscore.h>
 
 #include <limits>
@@ -177,6 +178,16 @@ public:
 };
 
 typedef std::function<void(int ClientId, bool DisallowReset)> FAntiPingInterfereCallback;
+
+// velocity change, before tuning strength, that a hammer swung from `HammerPos` gives a tee at `TargetPos`
+inline vec2 HammerHitForce(vec2 HammerPos, vec2 TargetPos, vec2 TargetVel, int TargetMoveRestrictions)
+{
+	const vec2 Dir = length(TargetPos - HammerPos) > 0.0f ? normalize(TargetPos - HammerPos) : vec2(0.f, -1.f);
+	vec2 Temp = TargetVel + normalize(Dir + vec2(0.f, -1.1f)) * 10.0f;
+	Temp = ClampVel(TargetMoveRestrictions, Temp);
+	Temp -= TargetVel;
+	return vec2(0.f, -1.0f) + Temp;
+}
 
 class CCharacterCore
 {

@@ -335,19 +335,9 @@ void CCharacter::FireWeapon()
 			else
 				GameWorld()->CreatePredictedHammerHitEvent(ProjStartPos, GetCid());
 
-			vec2 Dir;
-			if(length(pTarget->m_Pos - m_Pos) > 0.0f)
-				Dir = normalize(pTarget->m_Pos - m_Pos);
-			else
-				Dir = vec2(0.f, -1.f);
+			vec2 Force = HammerHitForce(m_Pos, pTarget->m_Pos, pTarget->m_Core.m_Vel, pTarget->m_MoveRestrictions);
 
 			float Strength = GetTuning(GetOverriddenTuneZone())->m_HammerStrength;
-
-			vec2 Temp = pTarget->m_Core.m_Vel + normalize(Dir + vec2(0.f, -1.1f)) * 10.0f;
-			Temp = ClampVel(pTarget->m_MoveRestrictions, Temp);
-			Temp -= pTarget->m_Core.m_Vel;
-
-			vec2 Force = vec2(0.f, -1.0f) + Temp;
 
 			if(GameWorld()->m_WorldConfig.m_IsFNG)
 			{
