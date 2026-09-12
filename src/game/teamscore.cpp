@@ -5,6 +5,8 @@
 
 #include <engine/shared/config.h>
 
+#include <algorithm>
+
 CTeamsCore::CTeamsCore()
 {
 	Reset();
@@ -54,17 +56,19 @@ void CTeamsCore::Reset()
 			m_aTeam[i] = TEAM_FLOCK;
 		m_aIsSolo[i] = false;
 	}
+	std::fill(m_aTeam + MAX_CLIENTS, m_aTeam + MAX_GAME_IDS, TEAM_FLOCK);
+	std::fill(m_aIsSolo + MAX_CLIENTS, m_aIsSolo + MAX_GAME_IDS, false);
 }
 
 void CTeamsCore::SetSolo(int ClientId, bool Value)
 {
-	dbg_assert(ClientId >= 0 && ClientId < MAX_CLIENTS, "Invalid client id");
+	dbg_assert(ClientId >= 0 && ClientId < MAX_GAME_IDS, "Invalid client id");
 	m_aIsSolo[ClientId] = Value;
 }
 
 bool CTeamsCore::GetSolo(int ClientId) const
 {
-	if(ClientId < 0 || ClientId >= MAX_CLIENTS)
+	if(ClientId < 0 || ClientId >= MAX_GAME_IDS)
 		return false;
 	return m_aIsSolo[ClientId];
 }

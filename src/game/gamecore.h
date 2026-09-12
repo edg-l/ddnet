@@ -170,8 +170,11 @@ public:
 		return m_pPrng->RandomBits() % BelowThis;
 	}
 
-	class CCharacterCore *m_apCharacters[MAX_CLIENTS];
+	class CCharacterCore *m_apCharacters[MAX_GAME_IDS];
 	CPrng *m_pPrng;
+
+	// the all-pairs loops scan ids below this
+	int m_GameIdCount = MAX_CLIENTS;
 
 	void InitSwitchers(int HighestSwitchNumber);
 	std::vector<SSwitchers> m_vSwitchers;

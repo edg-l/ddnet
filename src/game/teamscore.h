@@ -24,8 +24,8 @@ enum
 
 class CTeamsCore
 {
-	int m_aTeam[MAX_CLIENTS];
-	bool m_aIsSolo[MAX_CLIENTS];
+	int m_aTeam[MAX_GAME_IDS];
+	bool m_aIsSolo[MAX_GAME_IDS];
 
 public:
 	int m_NumDDRaceTeams;

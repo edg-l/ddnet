@@ -90,6 +90,7 @@ enum
 	VANILLA_MAX_CLIENTS = 16,
 	SERVER_MAX_CLIENTS = 128,
 	LEGACY_MAX_CLIENTS = 64,
+	MAX_GAME_IDS = 1024, // characters on the server; ids from MAX_CLIENTS up have no connection
 	MAX_CHECKPOINTS = 25,
 	MIN_TICK = 0,
 	MAX_TICK = 0x6FFFFFFF,

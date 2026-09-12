@@ -352,7 +352,7 @@ void CCharacterCore::Tick(bool UseInput, bool DoDeferredTick)
 		if(!m_HookHitDisabled && m_pWorld && m_Tuning.m_PlayerHooking && (m_HookState == HOOK_FLYING || !m_NewHook))
 		{
 			float Distance = 0.0f;
-			for(int i = 0; i < MAX_CLIENTS; i++)
+			for(int i = 0; i < m_pWorld->m_GameIdCount; i++)
 			{
 				CCharacterCore *pCharCore = m_pWorld->m_apCharacters[i];
 				if(!pCharCore || pCharCore == this || (!(m_Super || pCharCore->m_Super) && ((m_Id != -1 && !m_pTeams->CanCollide(i, m_Id)) || pCharCore->m_Solo || m_Solo)))
@@ -466,7 +466,7 @@ void CCharacterCore::TickDeferred()
 {
 	if(m_pWorld)
 	{
-		for(int i = 0; i < MAX_CLIENTS; i++)
+		for(int i = 0; i < m_pWorld->m_GameIdCount; i++)
 		{
 			CCharacterCore *pCharCore = m_pWorld->m_apCharacters[i];
 			if(!pCharCore)
@@ -581,7 +581,7 @@ void CCharacterCore::Move()
 			{
 				float a = i / Distance;
 				vec2 Pos = mix(m_Pos, NewPos, a);
-				for(int p = 0; p < MAX_CLIENTS; p++)
+				for(int p = 0; p < m_pWorld->m_GameIdCount; p++)
 				{
 					CCharacterCore *pCharCore = m_pWorld->m_apCharacters[p];
 					if(!pCharCore || pCharCore == this)

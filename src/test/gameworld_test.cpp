@@ -1,5 +1,6 @@
 #include "test.h"
 
+#include <base/detect.h>
 #include <base/logger.h>
 #include <base/mem.h>
 #include <base/types.h>
@@ -27,6 +28,8 @@
 
 #include <gtest/gtest.h>
 
+#include <array>
+#include <cstdint>
 #include <limits>
 #include <memory>
 #include <random>
@@ -354,4 +357,193 @@ TEST(HammerHitForce, MatchesInline)
 		const vec2 Expected = OriginalHammerHitForce(HammerPos, TargetPos, TargetVel, TargetMoveRestrictions);
 		ASSERT_EQ(mem_comp(&Actual, &Expected, sizeof(vec2)), 0) << "sample " << i;
 	}
+}
+
+// Folds one CCharacterCore's Write() output into a running FNV-1a-64 hash.
+static uint64_t HashCharacterCore(uint64_t Hash, const CCharacterCore &Core)
+{
+	CNetObj_CharacterCore Obj = {};
+	Core.Write(&Obj);
+	const auto *pBytes = reinterpret_cast<const unsigned char *>(&Obj);
+	for(size_t i = 0; i < sizeof(Obj); i++)
+	{
+		Hash ^= pBytes[i];
+		Hash *= 1099511628211ULL; // FNV-1a-64 prime
+	}
+	return Hash;
+}
+
+TEST_F(GameWorld, CoreTeeTeeGoldenTrajectory)
+{
+	CWorldCore World;
+	CTeamsCore Teams;
+
+	vec2 SpawnPos;
+	GameServer()->m_pController->CanSpawn(TEAM_GAME, &SpawnPos, 0);
+
+	std::array<CCharacterCore, 12> aCores{};
+	for(int i = 0; i < (int)aCores.size(); i++)
+	{
+		aCores[i].Init(&World, GameServer()->Collision(), &Teams);
+		aCores[i].m_Id = i;
+		aCores[i].m_Pos = SpawnPos + vec2((i % 4) * 40.0f, (i / 4) * -40.0f);
+		aCores[i].SetAntiPingInterfereCallback([](int, bool) {});
+		World.m_apCharacters[i] = &aCores[i];
+	}
+
+	Teams.Team(6, 1);
+	Teams.Team(7, 1);
+	Teams.Team(8, 1);
+	aCores[9].m_Super = true;
+	Teams.SetSolo(10, true);
+
+	std::mt19937 Rng(1);
+	std::uniform_int_distribution<int> DirDist(-1, 1);
+	std::uniform_int_distribution<int> BoolDist(0, 1);
+	std::uniform_int_distribution<int> TargetDist(-200, 200);
+
+	uint64_t Hash = 14695981039346656037ULL; // FNV-1a-64 offset basis
+	for(int Tick = 0; Tick < 1500; Tick++)
+	{
+		for(CCharacterCore &Core : aCores)
+		{
+			CNetObj_PlayerInput Input = {};
+			Input.m_Direction = DirDist(Rng);
+			Input.m_Jump = BoolDist(Rng);
+			Input.m_Hook = BoolDist(Rng);
+			Input.m_TargetX = TargetDist(Rng);
+			Input.m_TargetY = TargetDist(Rng);
+			Core.m_Input = Input;
+			Core.Tick(true);
+		}
+		for(CCharacterCore &Core : aCores)
+		{
+			Core.Move();
+			Core.Quantize();
+		}
+		for(const CCharacterCore &Core : aCores)
+		{
+			Hash = HashCharacterCore(Hash, Core);
+		}
+	}
+
+#if defined(CONF_PLATFORM_LINUX) && defined(CONF_ARCH_AMD64)
+	// hash of the tee-tee trajectory; the core loops must not change it
+	EXPECT_EQ(Hash, 0xD8647CE98336B1BDULL);
+#else
+	(void)Hash;
+#endif
+}
+
+// Runs the 12-tee scenario from CoreTeeTeeGoldenTrajectory, plus NumExtraCores cores at
+// ids MAX_CLIENTS.., in team ExtraTeam and solo state ExtraSolo, with the world's loop
+// bound raised to GameIdCount. Returns every player core's per-tick Write() output.
+// ExtraNearby places the extra cores on the same grid as the player cluster (so they
+// can collide and be hooked); otherwise they sit far outside hook range (380) of the
+// player cluster and of each other's worst-case drift, so a m_Super player core (which
+// can hook across teams) never finds a target in range either.
+static std::vector<std::array<CNetObj_CharacterCore, 12>> RunTeeTeeTrajectory(CGameContext *pGameServer, int GameIdCount, int NumExtraCores, int ExtraTeam, bool ExtraSolo, bool ExtraNearby)
+{
+	CWorldCore World;
+	CTeamsCore Teams;
+	World.m_GameIdCount = GameIdCount;
+
+	vec2 SpawnPos;
+	pGameServer->m_pController->CanSpawn(TEAM_GAME, &SpawnPos, 0);
+
+	constexpr float ExtraOffset = 100000.0f;
+
+	std::vector<CCharacterCore> vCores(12 + NumExtraCores);
+	for(int i = 0; i < (int)vCores.size(); i++)
+	{
+		const int Id = i < 12 ? i : MAX_CLIENTS + (i - 12);
+		vCores[i].Init(&World, pGameServer->Collision(), &Teams);
+		vCores[i].m_Id = Id;
+		vCores[i].m_Pos = i < 12 || ExtraNearby ?
+					  SpawnPos + vec2((i % 4) * 40.0f, (i / 4) * -40.0f) :
+					  SpawnPos + vec2(ExtraOffset + (i - 12) % 4 * 40.0f, (i - 12) / 4 * -40.0f);
+		vCores[i].SetAntiPingInterfereCallback([](int, bool) {});
+		World.m_apCharacters[Id] = &vCores[i];
+	}
+
+	Teams.Team(6, 1);
+	Teams.Team(7, 1);
+	Teams.Team(8, 1);
+	vCores[9].m_Super = true;
+	Teams.SetSolo(10, true);
+
+	for(int i = 0; i < NumExtraCores; i++)
+	{
+		const int Id = MAX_CLIENTS + i;
+		Teams.Team(Id, ExtraTeam);
+		Teams.SetSolo(Id, ExtraSolo);
+	}
+
+	// Player and extra cores draw from independent streams, so a player core's input
+	// sequence never depends on NumExtraCores.
+	std::mt19937 PlayerRng(1);
+	std::mt19937 ExtraRng(2);
+	std::uniform_int_distribution<int> DirDist(-1, 1);
+	std::uniform_int_distribution<int> BoolDist(0, 1);
+	std::uniform_int_distribution<int> TargetDist(-200, 200);
+
+	std::vector<std::array<CNetObj_CharacterCore, 12>> vPlayerTicks(1500);
+	for(int Tick = 0; Tick < 1500; Tick++)
+	{
+		for(int i = 0; i < (int)vCores.size(); i++)
+		{
+			std::mt19937 &Rng = i < 12 ? PlayerRng : ExtraRng;
+			CNetObj_PlayerInput Input = {};
+			Input.m_Direction = DirDist(Rng);
+			Input.m_Jump = BoolDist(Rng);
+			Input.m_Hook = BoolDist(Rng);
+			Input.m_TargetX = TargetDist(Rng);
+			Input.m_TargetY = TargetDist(Rng);
+			vCores[i].m_Input = Input;
+			vCores[i].Tick(true);
+		}
+		for(CCharacterCore &Core : vCores)
+		{
+			Core.Move();
+			Core.Quantize();
+		}
+		for(int i = 0; i < 12; i++)
+		{
+			vCores[i].Write(&vPlayerTicks[Tick][i]);
+		}
+	}
+	return vPlayerTicks;
+}
+
+TEST_F(GameWorld, CoreExtraIdsDoNotAffectPlayers)
+{
+	const std::vector<std::array<CNetObj_CharacterCore, 12>> vRunA = RunTeeTeeTrajectory(GameServer(), MAX_CLIENTS, 0, 0, false, false);
+	// Run B: 20 extra cores on their own team, far from the cluster, so they never collide or hook with players.
+	const std::vector<std::array<CNetObj_CharacterCore, 12>> vRunB = RunTeeTeeTrajectory(GameServer(), MAX_GAME_IDS, 20, 7, false, false);
+
+	for(size_t Tick = 0; Tick < vRunA.size(); Tick++)
+	{
+		for(int i = 0; i < 12; i++)
+		{
+			ASSERT_EQ(mem_comp(&vRunA[Tick][i], &vRunB[Tick][i], sizeof(CNetObj_CharacterCore)), 0) << "tick " << Tick << " core " << i;
+		}
+	}
+
+	// Run C: extra cores share team 0 with players 0-5, are not solo, and sit on the
+	// player grid, so they can interact.
+	const std::vector<std::array<CNetObj_CharacterCore, 12>> vRunC = RunTeeTeeTrajectory(GameServer(), MAX_GAME_IDS, 20, 0, false, true);
+
+	bool AnyDifference = false;
+	for(size_t Tick = 0; Tick < vRunA.size() && !AnyDifference; Tick++)
+	{
+		for(int i = 0; i < 12; i++)
+		{
+			if(mem_comp(&vRunA[Tick][i], &vRunC[Tick][i], sizeof(CNetObj_CharacterCore)) != 0)
+			{
+				AnyDifference = true;
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(AnyDifference) << "interacting extra cores should perturb player trajectories";
 }
