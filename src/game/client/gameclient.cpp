@@ -2130,8 +2130,12 @@ void CGameClient::OnNewSnapshot(bool DummySwapped)
 
 	for(int i = 0; i < MAX_CLIENTS; i++)
 	{
-		if(m_Snap.m_apPlayerInfos[i] && m_aClients[i].m_MapDummy)
-			m_Snap.m_NumPlayers--;
+		const CNetObj_PlayerInfo *pInfo = m_Snap.m_apPlayerInfos[i];
+		if(!pInfo || !m_aClients[i].m_MapDummy)
+			continue;
+		m_Snap.m_NumPlayers--;
+		if(pInfo->m_Team != TEAM_SPECTATORS)
+			m_Snap.m_aTeamSize[pInfo->m_Team]--;
 	}
 
 	if(!FoundGameInfoEx)
@@ -2216,10 +2220,10 @@ void CGameClient::OnNewSnapshot(bool DummySwapped)
 
 	// sort player infos by name
 	mem_copy(m_Snap.m_apInfoByName, m_Snap.m_apPlayerInfos, sizeof(m_Snap.m_apInfoByName));
-	for(int i = 0; i < MAX_CLIENTS; i++)
+	for(const CNetObj_PlayerInfo *&pInfo : m_Snap.m_apInfoByName)
 	{
-		if(m_Snap.m_apInfoByName[i] && m_aClients[m_Snap.m_apInfoByName[i]->m_ClientId].m_MapDummy)
-			m_Snap.m_apInfoByName[i] = nullptr;
+		if(pInfo && m_aClients[pInfo->m_ClientId].m_MapDummy)
+			pInfo = nullptr;
 	}
 	std::stable_sort(m_Snap.m_apInfoByName, m_Snap.m_apInfoByName + MAX_CLIENTS,
 		[this](const CNetObj_PlayerInfo *pPlayer1, const CNetObj_PlayerInfo *pPlayer2) -> bool {
