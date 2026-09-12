@@ -167,6 +167,13 @@ public:
 					*pId = GetMaxClients(ClientId) - 1;
 			}
 		}
+		// this client covers every player id, but game ids above MAX_CLIENTS may still fail to map (map dummy sender or an unmapped slot)
+		else if(ClientNeedsIdTranslation(ClientId) && *pId >= 0 && !Translate(*pId, ClientId))
+		{
+			str_format(aBuf, sizeof(aBuf), "%s: %s", ClientName(*pId), MsgCopy.m_pMessage);
+			MsgCopy.m_pMessage = aBuf;
+			*pId = -1;
+		}
 
 		if(IsSixup(ClientId))
 		{
@@ -279,12 +286,14 @@ public:
 
 	bool Translate(int &Target, int ClientId)
 	{
-		// console and server demo pseudo clients operate on untranslated ids (SERVER_DEMO_CLIENT == IConsole::CLIENT_ID_UNSPECIFIED)
-		if(ClientId == SERVER_DEMO_CLIENT || ClientId == IConsole::CLIENT_ID_GAME || ClientId == IConsole::CLIENT_ID_NO_GAME)
+		// console pseudo clients operate on untranslated ids; SERVER_DEMO_CLIENT
+		// (which shares its value with IConsole::CLIENT_ID_UNSPECIFIED) is handled
+		// by ClientNeedsIdTranslation below
+		if(ClientId == IConsole::CLIENT_ID_GAME || ClientId == IConsole::CLIENT_ID_NO_GAME)
 			return true;
-		if(ClientSupportsServerMaxClients(ClientId))
+		if(!ClientNeedsIdTranslation(ClientId))
 			return true;
-		if(Target < 0 || Target >= MAX_CLIENTS)
+		if(Target < 0 || Target >= MAX_GAME_IDS)
 			return false;
 		int *pMap = GetReverseIdMap(ClientId);
 		if(pMap[Target] == -1)
@@ -295,10 +304,12 @@ public:
 
 	bool ReverseTranslate(int &Target, int ClientId)
 	{
-		// console and server demo pseudo clients operate on untranslated ids (SERVER_DEMO_CLIENT == IConsole::CLIENT_ID_UNSPECIFIED)
-		if(ClientId == SERVER_DEMO_CLIENT || ClientId == IConsole::CLIENT_ID_GAME || ClientId == IConsole::CLIENT_ID_NO_GAME)
+		// every call site reverse-translates a real client's own input, never the
+		// server demo pseudo client
+		dbg_assert(ClientId != SERVER_DEMO_CLIENT, "ReverseTranslate called with SERVER_DEMO_CLIENT");
+		if(ClientId == IConsole::CLIENT_ID_GAME || ClientId == IConsole::CLIENT_ID_NO_GAME)
 			return true;
-		if(ClientSupportsServerMaxClients(ClientId))
+		if(!ClientNeedsIdTranslation(ClientId))
 			return true;
 		if(Target < 0 || Target >= GetMaxClients(ClientId))
 			return false;
@@ -381,6 +392,15 @@ public:
 	virtual bool IsSixup(int ClientId) const = 0;
 	virtual int GetMaxClients(int ClientId) const = 0;
 	virtual bool ClientSupportsServerMaxClients(int ClientId) const = 0;
+
+	// Whether snapshot and net message ids for this client must go through its id map
+	// (`Translate`/`ReverseTranslate`) because the game world holds ids the client can't
+	// address directly, either because it can't address every player id, or because
+	// game ids are in use above `MAX_CLIENTS`.
+	virtual bool ClientNeedsIdTranslation(int ClientId) const = 0;
+	// The number of game ids currently live, `MAX_GAME_IDS` while the map has map
+	// dummies and `MAX_CLIENTS` otherwise. Drives `ClientNeedsIdTranslation`.
+	virtual void SetGameIdCount(int Count) = 0;
 };
 
 class IGameServer : public IInterface

@@ -547,3 +547,64 @@ TEST_F(GameWorld, CoreExtraIdsDoNotAffectPlayers)
 	}
 	EXPECT_TRUE(AnyDifference) << "interacting extra cores should perturb player trajectories";
 }
+
+// Restores CServer::m_GameIdCount to its value at construction, so a test can raise it
+// without affecting the ones that run after it.
+class CScopedGameIdCount
+{
+	CServer *m_pServer;
+	int m_Original;
+
+public:
+	explicit CScopedGameIdCount(CServer *pServer) :
+		m_pServer(pServer), m_Original(pServer->m_GameIdCount)
+	{
+	}
+	~CScopedGameIdCount()
+	{
+		m_pServer->SetGameIdCount(m_Original);
+	}
+};
+
+TEST_F(GameWorld, IdTranslationModernClient)
+{
+	const int ClientId = 5;
+	CServer::CClient &Client = m_pServer->m_aClients[ClientId];
+	Client.m_DDNetVersion = DDNET_VERSION_NUMBER;
+
+	CScopedGameIdCount ScopedGameIdCount(m_pServer);
+
+	EXPECT_TRUE(m_pServer->ClientSupportsServerMaxClients(ClientId));
+	EXPECT_FALSE(m_pServer->ClientNeedsIdTranslation(ClientId));
+
+	m_pServer->SetGameIdCount(MAX_GAME_IDS);
+	EXPECT_TRUE(m_pServer->ClientSupportsServerMaxClients(ClientId));
+	EXPECT_TRUE(m_pServer->ClientNeedsIdTranslation(ClientId));
+
+	Client.m_aReverseIdMap[200] = 17;
+	Client.m_aIdMap[17] = 200;
+
+	int Target = 200;
+	EXPECT_TRUE(m_pServer->Translate(Target, ClientId));
+	EXPECT_EQ(Target, 17);
+
+	Target = 17;
+	EXPECT_TRUE(m_pServer->ReverseTranslate(Target, ClientId));
+	EXPECT_EQ(Target, 200);
+
+	Target = MAX_GAME_IDS;
+	EXPECT_FALSE(m_pServer->Translate(Target, ClientId));
+
+	// SERVER_DEMO_CLIENT translates through the demo id maps, not a client's own
+	m_pServer->m_aDemoReverseIdMap[201] = 18;
+	m_pServer->m_aDemoIdMap[18] = 201;
+	Target = 201;
+	EXPECT_TRUE(m_pServer->Translate(Target, SERVER_DEMO_CLIENT));
+	EXPECT_EQ(Target, 18);
+
+	m_pServer->SetGameIdCount(MAX_CLIENTS);
+	EXPECT_FALSE(m_pServer->ClientNeedsIdTranslation(ClientId));
+	Target = 200;
+	EXPECT_TRUE(m_pServer->Translate(Target, ClientId));
+	EXPECT_EQ(Target, 200);
+}

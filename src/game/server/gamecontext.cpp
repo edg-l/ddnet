@@ -2812,7 +2812,7 @@ void CGameContext::OnSetSpectatorModeNetMessage(const CNetMsg_Cl_SetSpectatorMod
 			return;
 
 	pPlayer->UpdatePlaytime();
-	if(SpectatorId >= 0 && (!m_apPlayers[SpectatorId] || m_apPlayers[SpectatorId]->GetTeam() == TEAM_SPECTATORS))
+	if(SpectatorId >= 0 && (SpectatorId >= MAX_CLIENTS || !m_apPlayers[SpectatorId] || m_apPlayers[SpectatorId]->GetTeam() == TEAM_SPECTATORS))
 		SendChatTarget(ClientId, "Invalid spectator id used");
 	else
 		pPlayer->SetSpectatorId(SpectatorId);

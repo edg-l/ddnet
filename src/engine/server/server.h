@@ -198,20 +198,20 @@ public:
 
 		bool m_GotDDNetVersionPacket;
 		bool m_DDNetVersionSettled;
-		int m_DDNetVersion;
+		int m_DDNetVersion = VERSION_NONE;
 		char m_aDDNetVersionStr[64];
 		CUuid m_ConnectionId;
 		int64_t m_RedirectDropTime;
 		bool m_Rejoining;
 
-		int m_aIdMap[LEGACY_MAX_CLIENTS];
-		int m_aReverseIdMap[MAX_CLIENTS];
+		int m_aIdMap[MAX_CLIENTS];
+		int m_aReverseIdMap[MAX_GAME_IDS];
 
 		// DNSBL
 		EDnsblState m_DnsblState;
 		std::shared_ptr<CHostLookup> m_pDnsblLookup;
 
-		bool m_Sixup;
+		bool m_Sixup = false;
 
 		bool IncludedInServerInfo() const
 		{
@@ -222,6 +222,10 @@ public:
 	IConsole::EAccessLevel ConsoleAccessLevel(int ClientId) const;
 
 	CClient m_aClients[MAX_CLIENTS];
+
+	// id maps for the server demo pseudo client (SERVER_DEMO_CLIENT), which has no CClient slot
+	int m_aDemoIdMap[MAX_CLIENTS];
+	int m_aDemoReverseIdMap[MAX_GAME_IDS];
 
 	CSnapshotDelta m_SnapshotDelta;
 	CSnapshotDelta m_SnapshotDeltaSixup;
@@ -505,6 +509,7 @@ public:
 	// DDRace
 
 	int m_aPrevStates[MAX_CLIENTS];
+	int m_GameIdCount = MAX_CLIENTS;
 	const char *GetAnnouncementLine() override;
 	void ReadAnnouncementsFile();
 
@@ -546,6 +551,13 @@ public:
 	bool IsSixup(int ClientId) const override { return ClientId != SERVER_DEMO_CLIENT && m_aClients[ClientId].m_Sixup; }
 	int GetMaxClients(int ClientId) const override;
 	bool ClientSupportsServerMaxClients(int ClientId) const override;
+	bool ClientNeedsIdTranslation(int ClientId) const override
+	{
+		if(ClientId == SERVER_DEMO_CLIENT)
+			return m_GameIdCount > MAX_CLIENTS;
+		return m_GameIdCount > MAX_CLIENTS || !ClientSupportsServerMaxClients(ClientId);
+	}
+	void SetGameIdCount(int Count) override { m_GameIdCount = Count; }
 
 	void SetLoggers(std::shared_ptr<ILogger> &&pFileLogger, std::shared_ptr<ILogger> &&pStdoutLogger);
 

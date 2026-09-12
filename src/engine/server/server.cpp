@@ -248,9 +248,15 @@ CServer::CServer()
 {
 	m_pConfig = &g_Config;
 	for(int i = 0; i < MAX_CLIENTS; i++)
+	{
 		m_aDemoRecorder[i] = CDemoRecorder(&m_SnapshotDelta, true);
+		std::fill(std::begin(m_aClients[i].m_aIdMap), std::end(m_aClients[i].m_aIdMap), -1);
+		std::fill(std::begin(m_aClients[i].m_aReverseIdMap), std::end(m_aClients[i].m_aReverseIdMap), -1);
+	}
 	m_aDemoRecorder[RECORDER_MANUAL] = CDemoRecorder(&m_SnapshotDelta, false);
 	m_aDemoRecorder[RECORDER_AUTO] = CDemoRecorder(&m_SnapshotDelta, false);
+	std::fill(std::begin(m_aDemoIdMap), std::end(m_aDemoIdMap), -1);
+	std::fill(std::begin(m_aDemoReverseIdMap), std::end(m_aDemoReverseIdMap), -1);
 
 	m_pGameServer = nullptr;
 
@@ -4874,11 +4880,15 @@ void CServer::InitMaplist()
 
 int *CServer::GetIdMap(int ClientId)
 {
+	if(ClientId == SERVER_DEMO_CLIENT)
+		return m_aDemoIdMap;
 	return m_aClients[ClientId].m_aIdMap;
 }
 
 int *CServer::GetReverseIdMap(int ClientId)
 {
+	if(ClientId == SERVER_DEMO_CLIENT)
+		return m_aDemoReverseIdMap;
 	return m_aClients[ClientId].m_aReverseIdMap;
 }
 
