@@ -5,6 +5,7 @@
 
 #include "eventhandler.h"
 #include "gameworld.h"
+#include "map_dummies.h"
 #include "playermapping.h"
 #include "teehistorian.h"
 
@@ -235,6 +236,7 @@ public:
 	IGameController *m_pController;
 	CGameWorld m_World;
 	CPlayerMapping m_PlayerMapping;
+	CMapDummies m_MapDummies;
 
 	// helper functions
 	CCharacter *GetPlayerChar(int ClientId);

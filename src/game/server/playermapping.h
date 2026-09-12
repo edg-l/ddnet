@@ -7,6 +7,8 @@
 
 #include <game/teamscore.h>
 
+#include <optional>
+
 class CGameContext;
 class CPlayer;
 
@@ -66,13 +68,21 @@ private:
 		void InitPlayer(CSixupCfg SixupCfg);
 		CPlayerMapping *m_pPlayerMapping;
 		CPlayer *Player() const;
+		// A modern client's own id space covers every player id, so it maps every
+		// player to its own id instead of the first free slot.
+		bool IdentityMode() const;
 		int m_ClientId;
 		int m_NumReserved;
 		bool m_UpdateTeamsState;
-		bool m_aReserved[MAX_CLIENTS];
+		bool m_aReserved[MAX_GAME_IDS];
+		// own-team map dummies currently in this client's view; never evicted for overflow
+		bool m_aPriority[MAX_GAME_IDS];
 		bool m_ResortReserved;
 		int *m_pMap;
 		int *m_pReverseMap;
+		// the tick a visible slot was emptied, so it is not reused until the next
+		// mapping update (the client still interpolates the old occupant by id)
+		int m_aFreedTick[MAX_CLIENTS];
 		void Update();
 		void Add(int MapId, int ClientId);
 		int Remove(int MapId);
@@ -83,7 +93,7 @@ private:
 		int m_TotalOverhang;
 		int m_NumPages;
 		int m_NumSeeOthers;
-		bool m_aWasSeeOthers[MAX_CLIENTS];
+		bool m_aWasSeeOthers[MAX_GAME_IDS];
 		int m_LastSeeOthersVoteTick;
 		bool m_DoSeeOthersByVote;
 		void DoSeeOthers();
@@ -93,11 +103,23 @@ private:
 		int MaxNumSeeOthers();
 	} m_aMap[MAX_CLIENTS];
 	void UpdatePlayerMap(int ClientId);
+	void UpdateDemoMap();
+	// quarantine for the demo id map (SERVER_DEMO_CLIENT has no CPlayerMap)
+	int m_aDemoFreedTick[MAX_CLIENTS];
 
 public:
 	class CGameContext *GameServer() { return m_pGameServer; }
 	class CConfig *Config() { return m_pConfig; }
 	class IServer *Server() { return m_pServer; }
+
+	// Pure helpers with no server access, shared by every client's mapping update.
+	//
+	// The slot for GameId, preferring its identity slot when Identity is set and
+	// free, otherwise the first free, unquarantined slot below MapSize - NumSeeOthers.
+	static std::optional<int> ChooseSlot(const int *pMap, int MapSize, int NumSeeOthers, bool Identity, int GameId, const int *pFreedTick, int Tick);
+	// The farthest mapped id below MapSize - NumSeeOthers that is neither reserved
+	// nor priority, for overflow eviction.
+	static std::optional<int> ChooseEviction(const int *pMap, int MapSize, int NumSeeOthers, const bool *pReserved, const bool *pPriority, const float *pDistSq);
 
 	void Init(CGameContext *pGameServer);
 	void Tick();

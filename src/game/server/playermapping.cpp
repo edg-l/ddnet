@@ -16,6 +16,7 @@ void CPlayerMapping::Init(CGameContext *pGameServer)
 	m_pServer = m_pGameServer->Server();
 	std::fill(std::begin(m_aTeamSizes), std::end(m_aTeamSizes), 0);
 	m_ReserveAnyTeamSlots = true;
+	std::fill(std::begin(m_aDemoFreedTick), std::end(m_aDemoFreedTick), -1);
 
 	for(int i = 0; i < MAX_CLIENTS; i++)
 		m_aMap[i].Init(i, this);
@@ -24,22 +25,24 @@ void CPlayerMapping::Init(CGameContext *pGameServer)
 void CPlayerMapping::Tick()
 {
 	UpdatePlayerMap(-1);
+	if(Server()->ClientNeedsIdTranslation(SERVER_DEMO_CLIENT))
+		UpdateDemoMap();
 
-	// Translate StrongWeakId to clamp it to 64 players
-	bool NeedsLegacyMapping = false;
+	// Translate StrongWeakId to clamp it to the ids a client's own map can address
+	bool NeedsMapping = false;
 	for(int i = 0; i < MAX_CLIENTS; i++)
 	{
-		if(GameServer()->m_apPlayers[i] && !Server()->ClientSupportsServerMaxClients(i) && GameServer()->GetClientVersion(i) >= VERSION_DDNET_OLD)
+		if(GameServer()->m_apPlayers[i] && Server()->ClientNeedsIdTranslation(i) && GameServer()->GetClientVersion(i) >= VERSION_DDNET_OLD)
 		{
-			NeedsLegacyMapping = true;
+			NeedsMapping = true;
 			break;
 		}
 	}
-	if(!NeedsLegacyMapping)
+	if(!NeedsMapping)
 		return; // or continue past this block — nothing to do on modern-only servers
 
-	// Walk the character list ONCE per tick, not once per legacy client
-	int aCharacterIds[MAX_CLIENTS];
+	// Walk the character list ONCE per tick, not once per client
+	int aCharacterIds[MAX_GAME_IDS];
 	int NumCharacters = 0;
 	for(CCharacter *pChar = (CCharacter *)GameServer()->m_World.FindFirst(CGameWorld::ENTTYPE_CHARACTER); pChar; pChar = (CCharacter *)pChar->TypeNext())
 	{
@@ -49,17 +52,77 @@ void CPlayerMapping::Tick()
 	for(int i = 0; i < MAX_CLIENTS; i++)
 	{
 		CPlayer *pPlayer = GameServer()->m_apPlayers[i];
-		if(!pPlayer || Server()->ClientSupportsServerMaxClients(i) || GameServer()->GetClientVersion(i) < VERSION_DDNET_OLD)
+		if(!pPlayer || !Server()->ClientNeedsIdTranslation(i) || GameServer()->GetClientVersion(i) < VERSION_DDNET_OLD)
 			continue;
 
+		int *pReverseMap = Server()->GetReverseIdMap(i);
 		int StrongWeakId = 0;
 		for(int c = 0; c < NumCharacters; c++)
 		{
-			int Id = aCharacterIds[c];
-			if(Server()->Translate(Id, i))
-				pPlayer->m_aStrongWeakId[Id] = StrongWeakId++;
+			int TranslatedId = pReverseMap[aCharacterIds[c]];
+			if(TranslatedId != -1)
+				pPlayer->m_aStrongWeakId[TranslatedId] = StrongWeakId++;
 		}
 	}
+}
+
+void CPlayerMapping::UpdateDemoMap()
+{
+	int *pMap = Server()->GetIdMap(SERVER_DEMO_CLIENT);
+	int *pReverseMap = Server()->GetReverseIdMap(SERVER_DEMO_CLIENT);
+	const int Tick = Server()->Tick();
+
+	for(int i = 0; i < MAX_CLIENTS; i++)
+	{
+		if(!GameServer()->m_apPlayers[i])
+		{
+			if(pMap[i] != -1)
+			{
+				pReverseMap[pMap[i]] = -1;
+				pMap[i] = -1;
+				m_aDemoFreedTick[i] = Tick;
+			}
+			continue;
+		}
+
+		if(pMap[i] != i)
+		{
+			if(pMap[i] != -1)
+				pReverseMap[pMap[i]] = -1;
+			pMap[i] = i;
+			pReverseMap[i] = i;
+		}
+	}
+}
+
+std::optional<int> CPlayerMapping::ChooseSlot(const int *pMap, int MapSize, int NumSeeOthers, bool Identity, int GameId, const int *pFreedTick, int Tick)
+{
+	const int UsableSize = MapSize - NumSeeOthers;
+	if(Identity && GameId >= 0 && GameId < UsableSize && pMap[GameId] == -1 && pFreedTick[GameId] != Tick)
+		return GameId;
+	for(int i = 0; i < UsableSize; i++)
+		if(pMap[i] == -1 && pFreedTick[i] != Tick)
+			return i;
+	return std::nullopt;
+}
+
+std::optional<int> CPlayerMapping::ChooseEviction(const int *pMap, int MapSize, int NumSeeOthers, const bool *pReserved, const bool *pPriority, const float *pDistSq)
+{
+	const int UsableSize = MapSize - NumSeeOthers;
+	std::optional<int> Farthest;
+	float MaxDist = -1.0f;
+	for(int i = 0; i < UsableSize; i++)
+	{
+		int ClientId = pMap[i];
+		if(ClientId == -1 || pReserved[ClientId] || pPriority[ClientId])
+			continue;
+		if(pDistSq[ClientId] > MaxDist)
+		{
+			MaxDist = pDistSq[ClientId];
+			Farthest = i;
+		}
+	}
+	return Farthest;
 }
 
 void CPlayerMapping::CPlayerMap::Init(int ClientId, CPlayerMapping *pPlayerMapping)
@@ -70,6 +133,8 @@ void CPlayerMapping::CPlayerMap::Init(int ClientId, CPlayerMapping *pPlayerMappi
 	m_pReverseMap = m_pPlayerMapping->Server()->GetReverseIdMap(m_ClientId);
 	m_ResortReserved = false;
 	std::fill(std::begin(m_aReserved), std::end(m_aReserved), false);
+	std::fill(std::begin(m_aPriority), std::end(m_aPriority), false);
+	std::fill(std::begin(m_aFreedTick), std::end(m_aFreedTick), -1);
 	m_NumPages = 0;
 	m_TotalOverhang = 0;
 	m_NumReserved = 0;
@@ -83,9 +148,16 @@ CPlayer *CPlayerMapping::CPlayerMap::Player() const
 	return m_pPlayerMapping->GameServer()->m_apPlayers[m_ClientId];
 }
 
+bool CPlayerMapping::CPlayerMap::IdentityMode() const
+{
+	return m_pPlayerMapping->Server()->GetMaxClients(m_ClientId) >= MAX_CLIENTS;
+}
+
 void CPlayerMapping::CPlayerMap::InitPlayer(CSixupCfg SixupCfg)
 {
 	std::fill(std::begin(m_aReserved), std::end(m_aReserved), false);
+	std::fill(std::begin(m_aPriority), std::end(m_aPriority), false);
+	std::fill(std::begin(m_aFreedTick), std::end(m_aFreedTick), -1);
 
 	int NextFreeId = 0;
 	const NETADDR *pOwnAddr = m_pPlayerMapping->Server()->ClientAddr(m_ClientId);
@@ -120,8 +192,9 @@ void CPlayerMapping::CPlayerMap::InitPlayer(CSixupCfg SixupCfg)
 			Remove(i);
 	}
 
-	// Clear map, for 0.7 timeouts do this after we got our id back
-	for(int i = 0; i < LEGACY_MAX_CLIENTS; i++)
+	// Clear map, for 0.7 timeouts do this after we got our id back. MAX_CLIENTS
+	// because a modern client's own id space, unlike a legacy one's, reaches that far.
+	for(int i = 0; i < MAX_CLIENTS; i++)
 		m_pMap[i] = -1;
 	for(int i = 0; i < MAX_CLIENTS; i++)
 		m_pReverseMap[i] = -1;
@@ -160,7 +233,12 @@ void CPlayerMapping::CPlayerMap::InitPlayer(CSixupCfg SixupCfg)
 	// Breaks with more than `MapSize` tees from the same ip, but not a problem on official servers.
 	// Required for other player maps, even when this specific one doesn't need playermapping and supports max_clients
 	const bool NextIdValid = NextFreeId < LEGACY_MAX_CLIENTS;
-	if(NextFreeId < MapSize() && NextIdValid)
+	if(IdentityMode())
+	{
+		m_aReserved[m_ClientId] = true;
+		Add(m_ClientId, m_ClientId);
+	}
+	else if(NextFreeId < MapSize() && NextIdValid)
 	{
 		m_aReserved[m_ClientId] = true;
 		Add(NextFreeId, m_ClientId);
@@ -176,14 +254,24 @@ void CPlayerMapping::CPlayerMap::InitPlayer(CSixupCfg SixupCfg)
 			continue;
 
 		// update us with other same ip player infos
-		if(PlayerMappingRequired && m_pPlayerMapping->m_aMap[i].m_pReverseMap[i] < MapSize())
+		if(IdentityMode())
+		{
+			m_aReserved[i] = true;
+			Add(i, i);
+		}
+		else if(PlayerMappingRequired && m_pPlayerMapping->m_aMap[i].m_pReverseMap[i] < MapSize())
 		{
 			m_aReserved[i] = true;
 			Add(m_pPlayerMapping->m_aMap[i].m_pReverseMap[i], i);
 		}
 
 		// update other same ip players with our info
-		if(NextIdValid && NextFreeId < m_pPlayerMapping->m_aMap[i].MapSize())
+		if(m_pPlayerMapping->m_aMap[i].IdentityMode())
+		{
+			m_pPlayerMapping->m_aMap[i].m_aReserved[m_ClientId] = true;
+			m_pPlayerMapping->m_aMap[i].Add(m_ClientId, m_ClientId);
+		}
+		else if(NextIdValid && NextFreeId < m_pPlayerMapping->m_aMap[i].MapSize())
 		{
 			m_pPlayerMapping->m_aMap[i].m_aReserved[m_ClientId] = true;
 			m_pPlayerMapping->m_aMap[i].Add(NextFreeId, m_ClientId);
@@ -229,6 +317,7 @@ int CPlayerMapping::CPlayerMap::Remove(int MapId)
 		Player()->SendDisconnect(MapId);
 		m_pReverseMap[ClientId] = -1;
 		m_pMap[MapId] = -1;
+		m_aFreedTick[MapId] = m_pPlayerMapping->Server()->Tick();
 	}
 	return ClientId;
 }
@@ -237,7 +326,7 @@ void CPlayerMapping::CPlayerMap::Update()
 {
 	if(!m_pPlayerMapping->Server()->ClientIngame(m_ClientId) || !Player())
 		return;
-	if(m_pPlayerMapping->Server()->ClientSupportsServerMaxClients(m_ClientId))
+	if(!m_pPlayerMapping->Server()->ClientNeedsIdTranslation(m_ClientId))
 		return;
 
 	if(m_DoSeeOthersByVote)
@@ -264,6 +353,20 @@ void CPlayerMapping::CPlayerMap::Update()
 		{
 			Remove(m_pReverseMap[i]);
 			m_aReserved[i] = false;
+			continue;
+		}
+
+		// A modern client's own id space covers every player id, so a candidate always
+		// takes its own id and evicts whatever else holds it.
+		if(IdentityMode())
+		{
+			if(m_pReverseMap[i] == i)
+				continue;
+			if(m_pMap[i] != -1)
+				Remove(i);
+			std::optional<int> Slot = ChooseSlot(m_pMap, MapSize(), m_NumSeeOthers, true, i, m_aFreedTick, m_pPlayerMapping->Server()->Tick());
+			if(Slot)
+				Add(*Slot, i);
 			continue;
 		}
 
@@ -312,12 +415,9 @@ void CPlayerMapping::CPlayerMap::Update()
 		}
 		else
 		{
-			for(int j = 0; j < MapSize() - m_NumSeeOthers; j++)
-				if(m_pMap[j] == -1)
-				{
-					Insert = j;
-					break;
-				}
+			std::optional<int> Slot = ChooseSlot(m_pMap, MapSize(), m_NumSeeOthers, false, -1, m_aFreedTick, m_pPlayerMapping->Server()->Tick());
+			if(Slot)
+				Insert = *Slot;
 		}
 
 		if(Insert != -1)
@@ -342,9 +442,14 @@ void CPlayerMapping::CPlayerMap::InsertNextEmptyOrReplace(int ClientId)
 	if(ClientId == -1 || m_pReverseMap[ClientId] != -1)
 		return;
 
+	const int Tick = m_pPlayerMapping->Server()->Tick();
+
 	// Fast path: find an empty slot or a slot occupied by a character-less player.
 	for(int i = 0; i < MapSize() - m_NumSeeOthers; i++)
 	{
+		if(m_aFreedTick[i] == Tick)
+			continue;
+
 		int MappedClientId = m_pMap[i];
 		if(MappedClientId != -1 && m_aReserved[MappedClientId])
 			continue;
@@ -357,7 +462,7 @@ void CPlayerMapping::CPlayerMap::InsertNextEmptyOrReplace(int ClientId)
 	}
 
 	// Overflow fallback: all visible non-reserved slots are occupied.
-	// Replace the farthest non-reserved player if the new player is closer.
+	// Replace the farthest non-reserved, non-priority player if the new player is closer.
 	CCharacter *pNewChar = m_pPlayerMapping->GameServer()->GetPlayerChar(ClientId);
 	if(!pNewChar || !Player())
 		return;
@@ -365,30 +470,23 @@ void CPlayerMapping::CPlayerMap::InsertNextEmptyOrReplace(int ClientId)
 	vec2 ViewPos = Player()->m_ViewPos;
 	float NewDist = distance_squared(ViewPos, pNewChar->GetPos());
 
-	int ReplaceIndex = -1;
-	float MaxDist = NewDist;
-
+	float aDistSq[MAX_GAME_IDS];
+	std::fill(std::begin(aDistSq), std::end(aDistSq), -1.0f);
 	for(int i = 0; i < MapSize() - m_NumSeeOthers; i++)
 	{
 		int MappedClientId = m_pMap[i];
-		if(MappedClientId == -1 || m_aReserved[MappedClientId])
+		if(MappedClientId == -1)
 			continue;
 
 		CCharacter *pMappedChar = m_pPlayerMapping->GameServer()->GetPlayerChar(MappedClientId);
-		if(!pMappedChar)
-			continue;
-
-		float Dist = distance_squared(ViewPos, pMappedChar->GetPos());
-		if(Dist > MaxDist)
-		{
-			MaxDist = Dist;
-			ReplaceIndex = i;
-		}
+		if(pMappedChar)
+			aDistSq[MappedClientId] = distance_squared(ViewPos, pMappedChar->GetPos());
 	}
 
-	if(ReplaceIndex != -1)
+	std::optional<int> ReplaceIndex = ChooseEviction(m_pMap, MapSize(), m_NumSeeOthers, m_aReserved, m_aPriority, aDistSq);
+	if(ReplaceIndex && aDistSq[m_pMap[*ReplaceIndex]] > NewDist)
 	{
-		Add(ReplaceIndex, ClientId);
+		Add(*ReplaceIndex, ClientId);
 	}
 }
 
@@ -467,7 +565,7 @@ void CPlayerMapping::UpdatePlayerMap(int ClientId)
 
 		for(auto &Map : m_aMap)
 		{
-			if(!Map.Player() || Server()->ClientSupportsServerMaxClients(Map.m_ClientId))
+			if(!Map.Player() || !Server()->ClientNeedsIdTranslation(Map.m_ClientId))
 				continue;
 
 			// Calculate overhang every tick, not only when the map updates

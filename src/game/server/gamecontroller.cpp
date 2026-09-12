@@ -12,6 +12,8 @@
 #include "gamecontext.h"
 #include "player.h"
 
+#include <base/log.h>
+
 #include <engine/shared/config.h>
 #include <engine/shared/protocolglue.h>
 
@@ -386,6 +388,32 @@ bool IGameController::OnEntity(int Index, int x, int y, int Layer, int Flags, bo
 	else if(Index == ENTITY_PLASMAU)
 	{
 		new CGun(&GameServer()->m_World, Pos, false, false, Layer, Number);
+	}
+
+	if(Index == ENTITY_MAP_DUMMY || Index == ENTITY_MAP_DUMMY_HAMMER)
+	{
+		if(!Initial)
+			return false;
+
+		// entity tiles in the switch layer reach here without an IsValidSwitchTile check
+		if(Layer == LAYER_SWITCH)
+		{
+			log_warn("map_dummies", "switch layer map dummy at (%d,%d) ignored", x, y);
+			return false;
+		}
+
+		if(Layer == LAYER_FRONT)
+		{
+			const int Tile = GameServer()->Collision()->GetTile(x * 32 + 16, y * 32 + 16);
+			if(Tile == TILE_SOLID || Tile == TILE_NOHOOK)
+			{
+				log_warn("map_dummies", "front layer map dummy at (%d,%d) is inside a solid tile, ignored", x, y);
+				return true;
+			}
+		}
+
+		GameServer()->m_MapDummies.AddTile(Pos, Index == ENTITY_MAP_DUMMY_HAMMER, (Flags & TILEFLAG_XFLIP) != 0);
+		return true;
 	}
 
 	if(Type != -1) // NOLINT(clang-analyzer-unix.Malloc)

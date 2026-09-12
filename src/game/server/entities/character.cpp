@@ -1338,7 +1338,7 @@ void CCharacter::Snap(int SnappingClient)
 	DDNetCharacter.m_TeleCheckpoint = m_TeleCheckpoint;
 
 	int StrongWeakId = m_StrongWeakId;
-	if(!Server()->ClientSupportsServerMaxClients(SnappingClient) && SnappingClient >= 0 && GameServer()->m_apPlayers[SnappingClient])
+	if(Server()->ClientNeedsIdTranslation(SnappingClient) && SnappingClient >= 0 && GameServer()->m_apPlayers[SnappingClient])
 		StrongWeakId = GameServer()->m_apPlayers[SnappingClient]->m_aStrongWeakId[TranslatedId];
 	DDNetCharacter.m_StrongWeakId = StrongWeakId;
 

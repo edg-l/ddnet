@@ -4143,6 +4143,7 @@ void CGameContext::OnInit(const void *pPersistentData)
 	m_World.SetGameServer(this);
 	m_Events.SetGameServer(this);
 	m_PlayerMapping.Init(this);
+	m_MapDummies.Init(this);
 
 	m_GameUuid = RandomUuid();
 	Console()->SetGetVictimsCommandCallback(ClientsForVictim, this);
@@ -4332,6 +4333,7 @@ void CGameContext::OnInit(const void *pPersistentData)
 
 	// create all entities from the game layer
 	CreateAllEntities(true);
+	m_MapDummies.OnMapLoaded();
 
 	m_pAntibot->RoundStart(this);
 }

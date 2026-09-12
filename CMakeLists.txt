@@ -3165,6 +3165,8 @@ if(SERVER)
     gameworld.h
     interactions.cpp
     interactions.h
+    map_dummies.cpp
+    map_dummies.h
     mutes.cpp
     player.cpp
     player.h
@@ -3473,6 +3475,7 @@ if((GTEST_FOUND OR DOWNLOAD_GTEST) AND SERVER)
     network_test.cpp
     os_test.cpp
     packer_test.cpp
+    playermapping_test.cpp
     prng_test.cpp
     replace_words_test.cpp
     score_test.cpp
