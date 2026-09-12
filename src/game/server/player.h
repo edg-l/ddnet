@@ -3,6 +3,7 @@
 #ifndef GAME_SERVER_PLAYER_H
 #define GAME_SERVER_PLAYER_H
 
+#include "character_owner.h"
 #include "teeinfo.h"
 
 #include <base/vmath.h>
@@ -25,7 +26,7 @@ struct CNetObj_PlayerInput;
 struct CScorePlayerResult;
 
 // player object
-class CPlayer
+class CPlayer final : public ICharacterOwner
 {
 	MACRO_ALLOC_POOL_ID()
 
@@ -41,11 +42,24 @@ public:
 	void Respawn(bool WeakHook = false);
 	CCharacter *ForceSpawn(vec2 Pos); // required for loading savegames
 	void SetTeam(int Team, bool DoChatMsg = true);
-	int GetTeam() const { return m_Team; }
+	int GetTeam() const override { return m_Team; }
 	int GetCid() const { return m_ClientId; }
-	uint32_t GetUniqueCid() const { return m_UniqueClientId; }
+	uint32_t GetUniqueCid() const override { return m_UniqueClientId; }
 	int GetClientVersion() const;
 	bool SetTimerType(int TimerType);
+
+	// ICharacterOwner
+	std::optional<int> ClientId() const override { return m_ClientId; }
+	bool IsInactive() const override { return IsAfk() || IsPaused(); }
+	bool NinjaJetpack() const override { return m_NinjaJetpack; }
+	int PlayerFlags() const override { return m_PlayerFlags; }
+	void OnCharacterDeath(int Tick) override
+	{
+		m_PreviousDieTick = m_DieTick;
+		m_DieTick = Tick;
+	}
+	int DieTick() const override { return m_DieTick; }
+	void SetDieTick(int Tick) override { m_DieTick = Tick; }
 
 	void Tick();
 	void PostTick();
@@ -64,8 +78,8 @@ public:
 	void OnDisconnect();
 
 	void KillCharacter(int Weapon = WEAPON_GAME, bool SendKillMsg = true);
-	CCharacter *GetCharacter();
-	const CCharacter *GetCharacter() const;
+	CCharacter *GetCharacter() override;
+	const CCharacter *GetCharacter() const override;
 
 	void SpectatePlayerName(const char *pName);
 
@@ -250,7 +264,7 @@ public:
 	// Tick at which to kick the client if it still hasn't identified as a DDNet-based client
 	int m_DDNetVersionKickTick;
 
-	int GetDefaultEmote() const;
+	int GetDefaultEmote() const override;
 	void OverrideDefaultEmote(int Emote, int Tick);
 	bool CanOverrideDefaultEmote() const;
 

@@ -3127,6 +3127,7 @@ if(SERVER)
 
   set_src(GAME_SERVER GLOB_RECURSE src/game/server
     # tidy-alphabetical-start
+    character_owner.h
     ddracechat.cpp
     ddracecommands.cpp
     entities/character.cpp

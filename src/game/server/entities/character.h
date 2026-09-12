@@ -11,6 +11,7 @@ class CPlayer;
 class CGameTeams;
 class CGameWorld;
 class IAntibot;
+class ICharacterOwner;
 struct CAntibotCharacterData;
 
 enum
@@ -96,13 +97,16 @@ public:
 	void SetEmote(int Emote, int Tick);
 	int DetermineEyeEmote();
 
-	bool Rescue();
+	bool Rescue(int RescueMode);
 
 	int NeededFaketuning() const { return m_NeededFaketuning; }
 	bool IsAlive() const { return m_Alive; }
 	bool IsPaused() const { return m_Paused; }
 	CPlayer *GetPlayer() { return m_pPlayer; }
 	const CPlayer *GetPlayer() const { return m_pPlayer; }
+	int GameId() const { return m_GameId; }
+	ICharacterOwner *Owner() { return m_pOwner; }
+	const ICharacterOwner *Owner() const { return m_pOwner; }
 	CClientMask TeamMask();
 
 	void SetPosition(const vec2 &Position);
@@ -117,6 +121,12 @@ public:
 private:
 	// player controlling this character
 	class CPlayer *m_pPlayer;
+	// id in the world core, teams core and every id-carrying message
+	int m_GameId = -1;
+	// what this character reaches for player state through, see character_owner.h
+	ICharacterOwner *m_pOwner = nullptr;
+
+	void SendChatToClient(const char *pText);
 
 	bool m_Alive;
 	bool m_Paused;
