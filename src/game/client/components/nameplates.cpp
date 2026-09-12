@@ -872,6 +872,9 @@ void CNamePlates::OnRender()
 		if(!pInfo)
 			continue;
 
+		if(GameClient()->m_aClients[i].m_MapDummy)
+			continue;
+
 		// Each player can also have a spectator char whose name plate is displayed independently
 		if(GameClient()->m_aClients[i].m_SpecCharPresent)
 		{

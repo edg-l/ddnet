@@ -1774,6 +1774,8 @@ void CGameClient::OnNewSnapshot(bool DummySwapped)
 	for(auto &Client : m_aClients)
 	{
 		Client.m_SpecCharPresent = false;
+		Client.m_MapDummy = false;
+		Client.m_HammerMapDummy = false;
 	}
 
 	// go through all the items in the snapshot and gather the info we want
@@ -1864,6 +1866,7 @@ void CGameClient::OnNewSnapshot(bool DummySwapped)
 					m_aClients[Item.m_Id].m_Afk = pInfo->m_Flags & EXPLAYERFLAG_AFK;
 					m_aClients[Item.m_Id].m_Paused = pInfo->m_Flags & EXPLAYERFLAG_PAUSED;
 					m_aClients[Item.m_Id].m_Spec = pInfo->m_Flags & EXPLAYERFLAG_SPEC;
+					m_aClients[Item.m_Id].m_MapDummy = (pInfo->m_Flags & EXPLAYERFLAG_MAP_DUMMY) != 0;
 					m_aClients[Item.m_Id].m_FinishTimeSeconds = pInfo->m_FinishTimeSeconds;
 					m_aClients[Item.m_Id].m_FinishTimeMillis = pInfo->m_FinishTimeMillis;
 
@@ -1956,6 +1959,8 @@ void CGameClient::OnNewSnapshot(bool DummySwapped)
 					pClient->m_HasTelegunGrenade = pCharacterData->m_Flags & CHARACTERFLAG_TELEGUN_GRENADE;
 					pClient->m_HasTelegunGun = pCharacterData->m_Flags & CHARACTERFLAG_TELEGUN_GUN;
 					pClient->m_HasTelegunLaser = pCharacterData->m_Flags & CHARACTERFLAG_TELEGUN_LASER;
+
+					pClient->m_HammerMapDummy = (pCharacterData->m_Flags & CHARACTERFLAG_MAP_DUMMY_HAMMER) != 0;
 
 					pClient->m_Predicted.ReadDDNet(pCharacterData);
 
@@ -2123,6 +2128,12 @@ void CGameClient::OnNewSnapshot(bool DummySwapped)
 		}
 	}
 
+	for(int i = 0; i < MAX_CLIENTS; i++)
+	{
+		if(m_Snap.m_apPlayerInfos[i] && m_aClients[i].m_MapDummy)
+			m_Snap.m_NumPlayers--;
+	}
+
 	if(!FoundGameInfoEx)
 	{
 		m_GameInfo = GetGameInfo(nullptr, 0, &ServerInfo);
@@ -2205,6 +2216,11 @@ void CGameClient::OnNewSnapshot(bool DummySwapped)
 
 	// sort player infos by name
 	mem_copy(m_Snap.m_apInfoByName, m_Snap.m_apPlayerInfos, sizeof(m_Snap.m_apInfoByName));
+	for(int i = 0; i < MAX_CLIENTS; i++)
+	{
+		if(m_Snap.m_apInfoByName[i] && m_aClients[m_Snap.m_apInfoByName[i]->m_ClientId].m_MapDummy)
+			m_Snap.m_apInfoByName[i] = nullptr;
+	}
 	std::stable_sort(m_Snap.m_apInfoByName, m_Snap.m_apInfoByName + MAX_CLIENTS,
 		[this](const CNetObj_PlayerInfo *pPlayer1, const CNetObj_PlayerInfo *pPlayer2) -> bool {
 			if(!pPlayer2)

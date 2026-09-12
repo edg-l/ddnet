@@ -977,7 +977,7 @@ void CPlayers::OnRender()
 		else
 		{
 			if(GameClient()->m_aClients[i].m_FreezeEnd != 0)
-				aRenderInfo[i].m_TeeRenderFlags |= TEE_EFFECT_FROZEN | TEE_NO_WEAPON;
+				aRenderInfo[i].m_TeeRenderFlags |= TEE_EFFECT_FROZEN | (GameClient()->m_aClients[i].m_HammerMapDummy ? 0 : TEE_NO_WEAPON);
 			if(GameClient()->m_aClients[i].m_LiveFrozen)
 				aRenderInfo[i].m_TeeRenderFlags |= TEE_EFFECT_FROZEN;
 			if(GameClient()->m_aClients[i].m_Invincible)

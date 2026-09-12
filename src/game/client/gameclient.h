@@ -511,6 +511,8 @@ public:
 		bool m_Afk;
 		bool m_Paused;
 		bool m_Spec;
+		bool m_MapDummy = false;
+		bool m_HammerMapDummy = false;
 
 		int m_FinishTimeSeconds;
 		int m_FinishTimeMillis;
